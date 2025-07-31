@@ -1,0 +1,24 @@
+{
+  "short_name": "Vitruvian Fit",
+  "name": "Vitruvian Fit",
+  "description": "Um aplicativo mobile de treinos personalizáveis, para otimização de rotinas e acompanhamento de progresso. O aplicativo deve ser intuitivo, com foco na organização e registro detalhado dos treinos.",
+  "icons": [
+    {
+      "src": "/assets/icon-192x192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/assets/icon-512x512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "display": "standalone",
+  "scope": "/",
+  "theme_color": "#1E40AF",
+  "background_color": "#111827"
+}
