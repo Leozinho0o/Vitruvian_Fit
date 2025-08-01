@@ -21,11 +21,11 @@ const StatsScreen: React.FC = () => {
     const [isFlexibilidadeExpanded, setIsFlexibilidadeExpanded] = useState(true);
     const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
-    // Default to last 7 days
+    // Default to last 5 days
     const [endDate, setEndDate] = useState(formatDateForInput(new Date()));
     const [startDate, setStartDate] = useState(() => {
         const d = new Date();
-        d.setDate(d.getDate() - 6); // Set to 6 days ago for a 7-day total period
+        d.setDate(d.getDate() - 4); // Set to 4 days ago for a 5-day total period
         return formatDateForInput(d);
     });
 
@@ -503,8 +503,8 @@ const StatsScreen: React.FC = () => {
     }, [filteredWorkouts, exercises, muscleGroups]);
 
     return (
-        <div className="p-4 overflow-y-auto">
-            <div id="pdf-capture-area" className="space-y-6">
+        <div className="p-4 overflow-y-auto overflow-x-auto h-full">
+            <div id="pdf-capture-area" className="inline-block min-w-full space-y-6">
                 <section className="bg-light-card dark:bg-dark-card p-4 rounded-lg">
                     <h2 className="text-xl font-bold text-light-text dark:text-dark-text mb-3">Filtro de Período</h2>
                     <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-4">Selecione um intervalo para visualizar as estatísticas dos treinos concluídos.</p>

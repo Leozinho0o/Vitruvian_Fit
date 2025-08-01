@@ -1,8 +1,9 @@
 
-import React, { useState, useMemo, useCallback, Fragment } from 'react';
+
+import React, { useState, useMemo, useCallback, Fragment, useRef, useEffect } from 'react';
 import { useApp } from '../App';
 import { WorkoutSession, Routine, Folder, PlannedExercise, Unit, Exercise, WorkoutSet } from '../types';
-import { ChevronLeftIcon, ChevronRightIcon, PlayIcon, TrashIcon, XIcon, PlusIcon, PencilIcon } from '../components/Icons';
+import { ChevronLeftIcon, ChevronRightIcon, PlayIcon, TrashIcon, XIcon, PlusIcon, PencilIcon, SearchIcon } from '../components/Icons';
 import { getScaleOptions } from '../constants';
 import ConfirmationModal from '../components/ConfirmationModal';
 import { formatSecondsToMMSS, formatDuration } from '../utils';
@@ -23,6 +24,35 @@ const isSameDay = (d1: Date, d2: Date) =>
 
 const formatDate = (date: Date) => date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
 
+interface GhostWorkoutItemProps {
+    routine: Routine | undefined;
+    x: number;
+    y: number;
+}
+
+const GhostWorkoutItem: React.FC<GhostWorkoutItemProps> = ({ routine, x, y }) => {
+    if (!routine) return null;
+    const textColorClass = getContrastYIQ(routine.color);
+
+    return (
+        <div
+            id="ghost-workout-item"
+            className={`fixed p-1 rounded text-sm z-[9999] pointer-events-none opacity-80 shadow-2xl ${textColorClass}`}
+            style={{
+                backgroundColor: routine.color,
+                left: `${x}px`,
+                top: `${y}px`,
+                transform: 'translate(-50%, -50%)',
+                minWidth: '100px',
+                textAlign: 'center',
+            }}
+        >
+            <span className="font-bold w-full break-words">{routine.name}</span>
+        </div>
+    );
+};
+
+
 const CalendarScreen: React.FC = () => {
     const { routines, workouts, folders, logWorkout, updateWorkout, deleteWorkout, setActiveWorkoutSession, exercises } = useApp();
     const [currentDate, setCurrentDate] = useState(new Date());
@@ -34,6 +64,9 @@ const CalendarScreen: React.FC = () => {
     const [draggingWorkoutId, setDraggingWorkoutId] = useState<string | null>(null);
     const [dropTargetDate, setDropTargetDate] = useState<string | null>(null);
 
+    // For touch drag & drop
+    const [ghostElement, setGhostElement] = useState<GhostWorkoutItemProps | null>(null);
+    const dragStartInfo = useRef<{ x: number; y: number; workout: WorkoutSession; routine: Routine | undefined; } | null>(null);
 
     const handlePrevMonth = () => setCurrentDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
     const handleNextMonth = () => setCurrentDate(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
@@ -84,8 +117,6 @@ const CalendarScreen: React.FC = () => {
             workoutDate.setHours(hours, minutes, 0, 0);
             workoutStartTime = workoutDate.toISOString();
         } else {
-            // Convention: If no time is provided, store only the date string.
-            // This lets us know that a specific time was not set.
             workoutStartTime = dateString;
         }
 
@@ -108,17 +139,12 @@ const CalendarScreen: React.FC = () => {
             setConfirmDeleteWorkoutId(null);
         }
     }
-
-    const handleDrop = (e: React.DragEvent<HTMLDivElement>, day: Date) => {
-        e.preventDefault();
-        const workoutId = e.dataTransfer.getData('application/vitruvian-fit-workout');
+    
+    const moveWorkoutToDate = useCallback((workoutId: string, newDate: Date) => {
         const workoutToMove = workouts.find((w: WorkoutSession) => w.id === workoutId);
 
         if (workoutToMove) {
-            const newDate = new Date(day);
-            
             let newStartTime: string;
-            // If original startTime has time component, preserve it
             if (workoutToMove.startTime.includes('T')) {
                 const originalTime = new Date(workoutToMove.startTime);
                 newDate.setHours(originalTime.getHours());
@@ -137,76 +163,158 @@ const CalendarScreen: React.FC = () => {
             };
             updateWorkout(updatedWorkout);
         }
+    }, [workouts, updateWorkout]);
+
+
+    const handleDrop = (e: React.DragEvent<HTMLDivElement>, day: Date) => {
+        e.preventDefault();
+        const workoutId = e.dataTransfer.getData('application/vitruvian-fit-workout');
+        if (workoutId) {
+            moveWorkoutToDate(workoutId, day);
+        }
         setDropTargetDate(null);
         setDraggingWorkoutId(null);
     };
 
+    // --- Touch Handlers for Mobile Drag & Drop ---
+    const handleTouchStart = (e: React.TouchEvent, workout: WorkoutSession, routine: Routine | undefined) => {
+        if (e.touches.length > 1) return;
+        dragStartInfo.current = {
+            x: e.touches[0].clientX,
+            y: e.touches[0].clientY,
+            workout,
+            routine
+        };
+    };
+    
+    const handleTouchMove = (e: React.TouchEvent) => {
+        if (!dragStartInfo.current) return;
+        
+        const touch = e.touches[0];
+        const dx = Math.abs(touch.clientX - dragStartInfo.current.x);
+        const dy = Math.abs(touch.clientY - dragStartInfo.current.y);
+
+        // Threshold to differentiate a tap from a drag
+        if (dx < 5 && dy < 5 && !draggingWorkoutId) return;
+
+        // --- It's a drag ---
+        if (e.cancelable) e.preventDefault();
+
+        // Start drag state if it hasn't started
+        if (!draggingWorkoutId) {
+            const { workout, routine } = dragStartInfo.current;
+            setDraggingWorkoutId(workout.id);
+            setGhostElement({
+                routine,
+                x: touch.clientX,
+                y: touch.clientY,
+            });
+        }
+        
+        // Update ghost position
+        setGhostElement(g => g ? { ...g, x: touch.clientX, y: touch.clientY } : null);
+        
+        // Find drop target
+        const ghostDOMElement = document.getElementById('ghost-workout-item');
+        if (ghostDOMElement) ghostDOMElement.style.display = 'none';
+        const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
+        if (ghostDOMElement) ghostDOMElement.style.display = 'block';
+
+        const dayCell = targetElement?.closest('[data-date]');
+        const date = dayCell?.getAttribute('data-date');
+        setDropTargetDate(date || null);
+    };
+
+    const handleTouchEnd = () => {
+        if (draggingWorkoutId && dropTargetDate) {
+            const newDate = new Date(`${dropTargetDate}T00:00:00`);
+            moveWorkoutToDate(draggingWorkoutId, newDate);
+        }
+        
+        // Cleanup
+        setDraggingWorkoutId(null);
+        setDropTargetDate(null);
+        setGhostElement(null);
+        dragStartInfo.current = null;
+    };
 
     const today = new Date();
     const weekdays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
     return (
-        <div className="px-2 lg:px-4 py-4 flex flex-col h-full text-light-text dark:text-dark-text">
+        <div 
+            className="px-2 xl:px-4 py-4 flex flex-col h-full text-light-text dark:text-dark-text"
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            onTouchCancel={handleTouchEnd}
+        >
             <header className="flex items-center justify-between mb-4">
                 <button onClick={handlePrevMonth} className="p-2 rounded-full hover:bg-light-card dark:hover:bg-dark-card flex items-center justify-center"><ChevronLeftIcon className="h-6 w-6" /></button>
                 <h2 className="text-lg font-bold capitalize">{formatDate(currentDate)}</h2>
                 <button onClick={handleNextMonth} className="p-2 rounded-full hover:bg-light-card dark:hover:bg-dark-card flex items-center justify-center"><ChevronRightIcon className="h-6 w-6" /></button>
             </header>
-            <div className="grid grid-cols-7 gap-1 text-center text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">
-                {weekdays.map(day => <div key={day}>{day}</div>)}
-            </div>
-            <div className="grid grid-cols-7 gap-1 flex-grow">
-                {calendarGrid.map((day, index) => {
-                    const dayString = day ? day.toISOString().split('T')[0] : '';
-                    const isDropTarget = dropTargetDate === dayString;
+            <div className="flex-grow overflow-x-auto">
+                <div className="min-w-[56rem]">
+                    <div className="grid grid-cols-7 gap-1 text-center text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">
+                        {weekdays.map(day => <div key={day}>{day}</div>)}
+                    </div>
+                    <div className="grid grid-cols-7 gap-1">
+                        {calendarGrid.map((day, index) => {
+                            const dayString = day ? day.toISOString().split('T')[0] : '';
+                            const isDropTarget = dropTargetDate === dayString;
 
-                    return (
-                        <div key={index} 
-                             className={`relative p-1 border border-light-border dark:border-dark-border rounded-md min-h-[8rem] lg:min-h-[10rem] flex flex-col transition-colors duration-200 ${day ? 'hover:bg-light-card dark:hover:bg-dark-card cursor-pointer' : 'bg-transparent border-transparent'} ${isDropTarget ? 'bg-primary/20 border-primary' : ''}`}
-                             onClick={() => day && handleDayClick(day)}
-                             onDragOver={(e) => {
-                                 e.preventDefault();
-                                 if(day) setDropTargetDate(dayString);
-                             }}
-                             onDragLeave={() => setDropTargetDate(null)}
-                             onDrop={(e) => day && handleDrop(e, day)}
-                        >
-                            {day && (
-                                <>
-                                    <span className={`text-xs ${isSameDay(day, today) ? 'bg-secondary text-white rounded-full h-5 w-5 flex items-center justify-center font-bold' : ''} ${day.getMonth() !== currentDate.getMonth() ? 'text-gray-400 dark:text-gray-600' : ''}`}>
-                                        {day.getDate()}
-                                    </span>
-                                    <div className="mt-1 space-y-1">
-                                        {workoutsByDate.get(dayString)?.map(workout => {
-                                            const routine = routines.find((r: Routine) => r.id === workout.routineId);
-                                            const textColorClass = getContrastYIQ(routine?.color);
-                                            return (
-                                                <div key={workout.id} 
-                                                     onClick={(e) => { e.stopPropagation(); handleWorkoutClick(workout)}}
-                                                     draggable="true"
-                                                     onDragStart={(e) => {
-                                                         e.stopPropagation();
-                                                         e.dataTransfer.setData('application/vitruvian-fit-workout', workout.id);
-                                                         e.dataTransfer.effectAllowed = 'move';
-                                                         setDraggingWorkoutId(workout.id);
-                                                     }}
-                                                     onDragEnd={() => {
-                                                         setDraggingWorkoutId(null);
-                                                         setDropTargetDate(null);
-                                                     }}
-                                                     className={`text-sm p-1 rounded flex items-start cursor-grab transition-opacity ${textColorClass} ${draggingWorkoutId === workout.id ? 'opacity-50' : workout.completed ? 'opacity-60' : ''}`}
-                                                     style={{ backgroundColor: routine?.color }}>
-                                                     <span className="font-bold w-full break-words">{routine?.name}</span>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </>
-                            )}
-                        </div>
-                    );
-                })}
+                            return (
+                                <div key={index} 
+                                     data-date={dayString}
+                                     className={`relative p-1 border border-light-border dark:border-dark-border rounded-md min-h-[8rem] xl:min-h-[10rem] flex flex-col transition-colors duration-200 ${day ? 'hover:bg-light-card dark:hover:bg-dark-card cursor-pointer' : 'bg-transparent border-transparent'} ${isDropTarget ? 'bg-primary/20 border-primary' : ''}`}
+                                     onClick={() => day && handleDayClick(day)}
+                                     onDragOver={(e) => {
+                                         e.preventDefault();
+                                         if(day) setDropTargetDate(dayString);
+                                     }}
+                                     onDragLeave={() => setDropTargetDate(null)}
+                                     onDrop={(e) => day && handleDrop(e, day)}
+                                >
+                                    {day && (
+                                        <>
+                                            <span className={`text-xs ${isSameDay(day, today) ? 'bg-secondary text-white rounded-full h-5 w-5 flex items-center justify-center font-bold' : ''} ${day.getMonth() !== currentDate.getMonth() ? 'text-gray-400 dark:text-gray-600' : ''}`}>
+                                                {day.getDate()}
+                                            </span>
+                                            <div className="mt-1 space-y-1">
+                                                {workoutsByDate.get(dayString)?.map(workout => {
+                                                    const routine = routines.find((r: Routine) => r.id === workout.routineId);
+                                                    const textColorClass = getContrastYIQ(routine?.color);
+                                                    return (
+                                                        <div key={workout.id} 
+                                                             onClick={(e) => { e.stopPropagation(); handleWorkoutClick(workout)}}
+                                                             onTouchStart={(e) => handleTouchStart(e, workout, routine)}
+                                                             draggable="true"
+                                                             onDragStart={(e) => {
+                                                                 e.stopPropagation();
+                                                                 e.dataTransfer.setData('application/vitruvian-fit-workout', workout.id);
+                                                                 e.dataTransfer.effectAllowed = 'move';
+                                                                 setDraggingWorkoutId(workout.id);
+                                                             }}
+                                                             onDragEnd={() => {
+                                                                 setDraggingWorkoutId(null);
+                                                                 setDropTargetDate(null);
+                                                             }}
+                                                             className={`text-sm p-1 rounded flex items-start cursor-grab transition-opacity ${textColorClass} ${draggingWorkoutId === workout.id ? 'opacity-50' : workout.completed ? 'opacity-60' : ''}`}
+                                                             style={{ backgroundColor: routine?.color, touchAction: 'none' }}>
+                                                             <span className="font-bold w-full break-words">{routine?.name}</span>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
             </div>
+             {ghostElement && <GhostWorkoutItem {...ghostElement} />}
              {selectedDate && (
                 <AddWorkoutModal 
                     onClose={() => setSelectedDate(null)} 
@@ -256,24 +364,51 @@ interface AddWorkoutModalProps {
 const AddWorkoutModal: React.FC<AddWorkoutModalProps> = ({ onClose, onSave, date, routines, folders }) => {
     const [routineId, setRoutineId] = useState<string>('');
     const [time, setTime] = useState<string>('');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [isPickerOpen, setIsPickerOpen] = useState(false);
+    const pickerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (pickerRef.current && !pickerRef.current.contains(event.target as Node)) {
+                setIsPickerOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, [pickerRef]);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (routineId) onSave(routineId, time);
     };
     
-    const foldersWithRoutines = useMemo(() => {
+    const { filteredFoldersWithRoutines, filteredRoutinesWithoutFolder } = useMemo(() => {
+        const query = searchQuery.toLowerCase().trim();
         const folderMap = new Map<string, Routine[]>();
         folders.forEach(f => folderMap.set(f.id, []));
-        routines.forEach(r => {
-           if(r.folderId && folderMap.has(r.folderId)) {
-               folderMap.get(r.folderId)?.push(r);
-           }
-        });
-        return folderMap;
-    }, [folders, routines]);
-    
-    const routinesWithoutFolder = routines.filter(r => !r.folderId);
+        const routinesWithoutFolder: Routine[] = [];
+
+        for (const routine of routines) {
+            if (!query || routine.name.toLowerCase().includes(query)) {
+                if (routine.folderId && folderMap.has(routine.folderId)) {
+                    folderMap.get(routine.folderId)!.push(routine);
+                } else {
+                    routinesWithoutFolder.push(routine);
+                }
+            }
+        }
+        return { 
+            filteredFoldersWithRoutines: folderMap,
+            filteredRoutinesWithoutFolder: routinesWithoutFolder
+        };
+    }, [searchQuery, routines, folders]);
+
+    const selectedRoutine = routines.find(r => r.id === routineId);
+
+    const noResults = filteredRoutinesWithoutFolder.length === 0 && [...filteredFoldersWithRoutines.values()].every(r => r.length === 0);
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
@@ -284,27 +419,97 @@ const AddWorkoutModal: React.FC<AddWorkoutModalProps> = ({ onClose, onSave, date
                 </div>
                 <p className="mb-4">Data: <span className="font-semibold">{date.toLocaleDateString('pt-BR')}</span></p>
                 <form onSubmit={handleSubmit}>
-                    <div className="mb-4">
-                        <label htmlFor="routine" className="block text-sm font-medium mb-1">Rotina</label>
-                        <select id="routine" value={routineId} onChange={e => setRoutineId(e.target.value)} required
-                                className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2 text-light-text dark:text-dark-text focus:ring-secondary focus:border-secondary">
-                            <option value="" disabled>Selecione uma rotina...</option>
-                            {Array.from(foldersWithRoutines.entries()).map(([folderId, folderRoutines]) => (
-                                <optgroup key={folderId} label={folders.find(f => f.id === folderId)?.name}>
-                                    {folderRoutines.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                                </optgroup>
-                            ))}
-                            {routinesWithoutFolder.length > 0 && <optgroup label="Outras">
-                                {routinesWithoutFolder.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                            </optgroup>}
-                        </select>
+                    <div className="mb-4 relative" ref={pickerRef}>
+                        <label className="block text-sm font-medium mb-1">Rotina</label>
+                        <button
+                            type="button"
+                            onClick={() => setIsPickerOpen(!isPickerOpen)}
+                            className="w-full h-10 flex items-center justify-between bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2 text-light-text dark:text-dark-text"
+                        >
+                            {selectedRoutine ? (
+                                <div className="flex items-center">
+                                    <span className="h-4 w-4 rounded-sm mr-2 flex-shrink-0" style={{ backgroundColor: selectedRoutine.color }}></span>
+                                    <span>{selectedRoutine.name}</span>
+                                </div>
+                            ) : (
+                                <span className="text-light-text-secondary dark:text-dark-text-secondary">Selecione uma rotina...</span>
+                            )}
+                            <ChevronRightIcon className={`h-5 w-5 text-light-text-secondary dark:text-dark-text-secondary transition-transform ${isPickerOpen ? 'rotate-90' : ''}`} />
+                        </button>
+
+                        {isPickerOpen && (
+                            <div className="absolute top-full mt-1 w-full bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-lg shadow-xl z-20 p-2">
+                                <div className="relative mb-2">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                        <SearchIcon className="h-5 w-5 text-light-text-secondary dark:text-dark-text-secondary" />
+                                    </div>
+                                    <input
+                                        type="text"
+                                        placeholder="Buscar rotina..."
+                                        value={searchQuery}
+                                        onChange={e => setSearchQuery(e.target.value)}
+                                        className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md py-2 pl-10 pr-4"
+                                        autoFocus
+                                    />
+                                </div>
+                                <div className="max-h-60 overflow-y-auto">
+                                    {folders.map(folder => {
+                                        const folderRoutines = filteredFoldersWithRoutines.get(folder.id);
+                                        if (!folderRoutines || folderRoutines.length === 0) return null;
+
+                                        return (
+                                            <div key={folder.id}>
+                                                <h5 className="text-xs font-bold uppercase text-light-text-secondary dark:text-dark-text-secondary px-2 py-1">{folder.name}</h5>
+                                                {folderRoutines.map(r => (
+                                                    <button
+                                                        key={r.id}
+                                                        type="button"
+                                                        onClick={() => { setRoutineId(r.id); setIsPickerOpen(false); }}
+                                                        className="w-full text-left p-2 rounded-md flex items-center hover:bg-light-bg dark:hover:bg-dark-bg"
+                                                    >
+                                                        <span className="h-4 w-4 rounded-sm mr-3 flex-shrink-0" style={{ backgroundColor: r.color }}></span>
+                                                        <span className="truncate">{r.name}</span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        );
+                                    })}
+
+                                    {filteredRoutinesWithoutFolder.length > 0 && (
+                                        <div>
+                                            {[...filteredFoldersWithRoutines.values()].some(r => r.length > 0) && (
+                                                <h5 className="text-xs font-bold uppercase text-light-text-secondary dark:text-dark-text-secondary px-2 py-1 mt-2 border-t border-light-border dark:border-dark-border pt-1">Sem pasta</h5>
+                                            )}
+                                            {filteredRoutinesWithoutFolder.map(r => (
+                                                <button
+                                                    key={r.id}
+                                                    type="button"
+                                                    onClick={() => { setRoutineId(r.id); setIsPickerOpen(false); }}
+                                                    className="w-full text-left p-2 rounded-md flex items-center hover:bg-light-bg dark:hover:bg-dark-bg"
+                                                >
+                                                    <span className="h-4 w-4 rounded-sm mr-3 flex-shrink-0" style={{ backgroundColor: r.color }}></span>
+                                                    <span className="truncate">{r.name}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {noResults && (
+                                        <div className="text-center p-4 text-sm text-light-text-secondary dark:text-dark-text-secondary">
+                                            Nenhuma rotina encontrada.
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
                     </div>
+
                     <div className="mb-6">
                         <label htmlFor="time" className="block text-sm font-medium mb-1">Horário (Opcional)</label>
                         <input type="time" id="time" value={time} onChange={e => setTime(e.target.value)}
                                className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2 text-light-text dark:text-dark-text focus:ring-secondary focus:border-secondary" />
                     </div>
-                    <button type="submit" className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-md flex items-center justify-center">
+                    <button type="submit" disabled={!routineId} className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-md flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed">
                         <PlusIcon className="h-5 w-5 mr-2" />
                         Agendar
                     </button>

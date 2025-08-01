@@ -15,6 +15,7 @@ export enum Unit {
   KG = 'KG',
   DISTANCE = 'Distância (m)',
   SPEED = 'Velocidade (km/h)',
+  POWER = 'Potência (W)',
   NONE = 'N/A'
 }
 
