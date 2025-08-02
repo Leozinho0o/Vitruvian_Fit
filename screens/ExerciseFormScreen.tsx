@@ -258,30 +258,67 @@ const ExerciseFormScreen: React.FC = () => {
 
                             <hr className="border-light-border dark:border-dark-border" />
                              
-                            <div className="space-y-2">
-                                <label className="block text-sm font-medium">Mídia (Opcional)</label>
-                                <div className="grid grid-cols-2 gap-4 items-end">
-                                    <div className="space-y-4">
-                                        <div>
-                                            <label htmlFor="imageUrl" className="block text-xs font-medium mb-1">URL da Imagem</label>
-                                            <div className="flex items-center space-x-2">
-                                                <input type="text" id="imageUrl" value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://..." className="flex-grow bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-2 text-sm" />
-                                                <button type="button" onClick={() => fileInputRef.current?.click()} className="p-2 bg-gray-200 dark:bg-gray-600 rounded-md hover:bg-gray-300 dark:hover:bg-gray-500"><ImageIcon className="h-5 w-5"/></button>
-                                                <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
-                                            </div>
-                                        </div>
-                                         <div>
-                                            <label htmlFor="videoUrl" className="block text-xs font-medium mb-1">URL do Vídeo (YouTube)</label>
-                                            <input type="text" id="videoUrl" value={videoUrl} onChange={e => setVideoUrl(e.target.value)} placeholder="https://youtube.com/watch?v=..." className="w-full bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-2 text-sm" />
+                            <div className="space-y-6">
+                                <h3 className="block text-sm font-medium text-light-text dark:text-dark-text">Mídia (Opcional)</h3>
+                                
+                                {/* Image Section */}
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
+                                    <div className="sm:col-span-2">
+                                        <label htmlFor="imageUrl" className="block text-xs font-medium mb-1">URL da Imagem ou Upload</label>
+                                        <div className="flex items-center space-x-2">
+                                            <input 
+                                                type="text" 
+                                                id="imageUrl" 
+                                                value={imageUrl} 
+                                                onChange={e => setImageUrl(e.target.value)} 
+                                                placeholder="https://..." 
+                                                className="flex-grow bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-2 text-sm" 
+                                            />
+                                            <button 
+                                                type="button" 
+                                                onClick={() => fileInputRef.current?.click()} 
+                                                className="p-2 bg-gray-200 dark:bg-gray-600 rounded-md hover:bg-gray-300 dark:hover:bg-gray-500"
+                                                aria-label="Upload de imagem"
+                                            >
+                                                <ImageIcon className="h-5 w-5"/>
+                                            </button>
+                                            <input 
+                                                type="file" 
+                                                ref={fileInputRef} 
+                                                onChange={handleFileChange} 
+                                                accept="image/*" 
+                                                className="hidden" 
+                                            />
                                         </div>
                                     </div>
-                                    <div className="flex flex-col items-center gap-2">
-                                        <div className="w-24 h-24 bg-light-bg dark:bg-dark-bg rounded-md flex-shrink-0 flex items-center justify-center overflow-hidden">
-                                            {imageUrl ? <img src={imageUrl} alt="Preview" className="w-full h-full object-cover" /> : <ImageIcon className="h-8 w-8 text-light-text-secondary" />}
-                                        </div>
-                                        <div className="w-24 h-24 bg-light-bg dark:bg-dark-bg rounded-md flex-shrink-0 flex items-center justify-center overflow-hidden">
-                                            {youtubeId ? <img src={`https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg`} alt="Video Thumbnail" className="w-full h-full object-cover" /> : <PlayIcon className="h-8 w-8 text-light-text-secondary" />}
-                                        </div>
+                                    <div className="w-full aspect-square bg-light-bg dark:bg-dark-bg rounded-lg flex items-center justify-center overflow-hidden">
+                                        {imageUrl ? (
+                                            <img src={imageUrl} alt="Preview da Imagem" className="w-full h-full object-cover" />
+                                        ) : (
+                                            <ImageIcon className="h-10 w-10 text-light-text-secondary dark:text-dark-text-secondary" />
+                                        )}
+                                    </div>
+                                </div>
+                                
+                                {/* Video Section */}
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
+                                    <div className="sm:col-span-2">
+                                        <label htmlFor="videoUrl" className="block text-xs font-medium mb-1">URL do Vídeo (YouTube)</label>
+                                        <input 
+                                            type="text" 
+                                            id="videoUrl" 
+                                            value={videoUrl} 
+                                            onChange={e => setVideoUrl(e.target.value)} 
+                                            placeholder="https://youtube.com/watch?v=..." 
+                                            className="w-full bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-2 text-sm" 
+                                        />
+                                    </div>
+                                    <div className="w-full aspect-video bg-light-bg dark:bg-dark-bg rounded-lg flex items-center justify-center overflow-hidden">
+                                        {youtubeId ? (
+                                            <img src={`https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg`} alt="Preview do Vídeo" className="w-full h-full object-cover" />
+                                        ) : (
+                                            <PlayIcon className="h-10 w-10 text-light-text-secondary dark:text-dark-text-secondary" />
+                                        )}
                                     </div>
                                 </div>
                             </div>
