@@ -735,51 +735,57 @@ const RoutineFormModal: React.FC<RoutineFormModalProps> = ({ onClose, onSave, ro
             return;
         }
         
-        // Save all exercises and sets as they appear in the form, without filtering.
-        // This allows users to save exercises as placeholders without filling details immediately.
         onSave({ name, color, notes, folderId, plannedExercises });
     };
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
-            <div className="bg-light-card dark:bg-dark-card rounded-lg p-6 w-full max-w-lg max-h-[90vh] flex flex-col text-light-text dark:text-dark-text">
-                <div className="flex justify-between items-center mb-4 flex-shrink-0">
+        <div className="fixed inset-0 bg-light-bg dark:bg-dark-bg z-50" aria-modal="true">
+            <div className="h-full w-full max-w-4xl mx-auto bg-light-card dark:bg-dark-card flex flex-col text-light-text dark:text-dark-text">
+                <header className="flex justify-between items-center p-4 border-b border-light-border dark:border-dark-border flex-shrink-0 safe-top-padding">
                     <h3 className="text-xl font-bold">{routineToEdit ? 'Editar Rotina' : 'Nova Rotina'}</h3>
-                    <button type="button" onClick={onClose} className="p-1 rounded-full flex items-center justify-center hover:bg-light-bg dark:hover:bg-dark-bg"><XIcon className="h-6 w-6 text-light-text-secondary dark:text-dark-text-secondary" /></button>
-                </div>
+                    <button type="button" onClick={onClose} className="p-1 rounded-full flex items-center justify-center hover:bg-light-bg dark:hover:bg-dark-bg">
+                        <XIcon className="h-6 w-6 text-light-text-secondary dark:text-dark-text-secondary" />
+                    </button>
+                </header>
+
                 <form onSubmit={handleSubmit} className="flex-grow flex flex-col overflow-hidden">
-                    <div className="overflow-y-auto pr-2 space-y-4">
+                    <div className="overflow-y-auto p-4 md:p-6 space-y-6 flex-grow">
                         {/* Routine Details */}
-                        <div>
-                            <label htmlFor="routineName" className="block text-sm font-medium mb-1">Nome da Rotina</label>
-                            <input type="text" id="routineName" value={name} onChange={e => setName(e.target.value)} required className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2" />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium mb-1">Cor</label>
-                            <div className="flex flex-wrap gap-2">
-                                {ROUTINE_COLORS.map(c => (
-                                    <button key={c} type="button" onClick={() => setColor(c)} className={`h-8 w-8 rounded-full border-2 ${color === c ? 'border-primary' : 'border-transparent'}`} style={{ backgroundColor: c }} />
-                                ))}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="space-y-4">
+                                <div>
+                                    <label htmlFor="routineName" className="block text-sm font-medium mb-1">Nome da Rotina</label>
+                                    <input type="text" id="routineName" value={name} onChange={e => setName(e.target.value)} required className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2" />
+                                </div>
+                                <div>
+                                    <label htmlFor="folderId" className="block text-sm font-medium mb-1">Pasta (Opcional)</label>
+                                    <CustomSelect
+                                        id="folderId"
+                                        options={folderOptions}
+                                        value={folderId ?? undefined}
+                                        onChange={(val) => setFolderId(val ?? null)}
+                                        placeholder="Nenhuma"
+                                    />
+                                </div>
+                                <div>
+                                    <label htmlFor="routineNotes" className="block text-sm font-medium mb-1">Anotações (Opcional)</label>
+                                    <textarea id="routineNotes" value={notes} onChange={e => setNotes(e.target.value)} rows={4} className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2" />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium mb-1">Cor</label>
+                                <div className="grid grid-cols-5 gap-2">
+                                    {ROUTINE_COLORS.map(c => (
+                                        <button key={c} type="button" onClick={() => setColor(c)} className={`h-10 w-10 rounded-full border-4 transition-all duration-200 ${color === c ? 'border-primary scale-110' : 'border-transparent hover:border-gray-300 dark:hover:border-gray-600'}`} style={{ backgroundColor: c }} aria-label={`Cor ${c}`} />
+                                    ))}
+                                </div>
                             </div>
                         </div>
-                         <div>
-                            <label htmlFor="folderId" className="block text-sm font-medium mb-1">Pasta (Opcional)</label>
-                            <CustomSelect
-                                id="folderId"
-                                options={folderOptions}
-                                value={folderId ?? undefined}
-                                onChange={(val) => setFolderId(val ?? null)}
-                                placeholder="Nenhuma"
-                            />
-                        </div>
-                        <div>
-                            <label htmlFor="routineNotes" className="block text-sm font-medium mb-1">Anotações (Opcional)</label>
-                            <textarea id="routineNotes" value={notes} onChange={e => setNotes(e.target.value)} rows={2} className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2" />
-                        </div>
+                        
                         <hr className="border-light-border dark:border-dark-border" />
                         
                         {/* Planned Exercises */}
-                        <div className="space-y-3">
+                        <div className="space-y-4">
                             <h4 className="text-lg font-semibold">Exercícios</h4>
                             {plannedExercises.map((pex, exIndex) => {
                                 const exercise = allExercises.find(e => e.id === pex.exerciseId);
@@ -892,11 +898,11 @@ const RoutineFormModal: React.FC<RoutineFormModalProps> = ({ onClose, onSave, ro
                             </button>
                         </div>
                     </div>
-                    {/* Footer with buttons */}
-                    <div className="pt-4 flex justify-end items-center space-x-3 flex-shrink-0">
+                    
+                    <footer className="p-4 border-t border-light-border dark:border-dark-border flex-shrink-0 flex justify-end items-center space-x-3 safe-bottom-padding">
                         <button type="button" onClick={onClose} className="bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-700 text-gray-800 dark:text-white font-bold py-2 px-4 rounded-md">Cancelar</button>
                         <button type="submit" className="bg-secondary hover:bg-pink-700 text-white font-bold py-2 px-4 rounded-md">Salvar</button>
-                    </div>
+                    </footer>
                 </form>
                 {isExercisePickerOpen && (
                     <ExercisePickerModal 

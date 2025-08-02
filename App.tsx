@@ -9,6 +9,7 @@ import WorkoutSessionScreen from './screens/WorkoutSessionScreen';
 import SettingsScreen from './screens/SettingsScreen';
 import StatsScreen from './screens/StatsScreen';
 import Sidebar from './components/Sidebar';
+import ExerciseFormScreen from './screens/ExerciseFormScreen';
 
 import { DumbbellIcon, RepeatIcon, CalendarIcon, BarChartIcon, SettingsIcon } from './components/Icons';
 
@@ -65,6 +66,7 @@ const App: React.FC = () => {
 
     // Active workout state
     const [activeWorkoutSession, setActiveWorkoutSession] = useState<WorkoutSession | null>(null);
+    const [editingExercise, setEditingExercise] = useState<Exercise | 'new' | null>(null);
 
     // Apply theme effect
     useEffect(() => {
@@ -265,6 +267,7 @@ const App: React.FC = () => {
         workouts, setWorkouts,
         muscleGroups, setMuscleGroups,
         activeWorkoutSession, setActiveWorkoutSession,
+        editingExercise, setEditingExercise,
         theme, setTheme,
         addExercise,
         updateExercise,
@@ -286,7 +289,7 @@ const App: React.FC = () => {
         deleteMuscleGroup,
         startWorkoutFromRoutine,
     }), [
-        exercises, routines, folders, workouts, muscleGroups, activeWorkoutSession, theme,
+        exercises, routines, folders, workouts, muscleGroups, activeWorkoutSession, editingExercise, theme,
         addExercise, updateExercise, deleteExercise, duplicateExercise,
         addRoutine, updateRoutine, deleteRoutine, duplicateRoutine, moveRoutineToFolder,
         addFolder, updateFolder, deleteFolder, 
@@ -299,6 +302,9 @@ const App: React.FC = () => {
     const renderContent = () => {
         if (activeWorkoutSession) {
             return <WorkoutSessionScreen />;
+        }
+        if (editingExercise) {
+            return <ExerciseFormScreen />;
         }
         switch (activeView) {
             case View.ROUTINES: return <RoutinesScreen />;
@@ -314,13 +320,15 @@ const App: React.FC = () => {
         setActiveView(view);
     }
 
+    const isFullScreenView = activeWorkoutSession || editingExercise;
+
     return (
         <AppContext.Provider value={contextValue}>
             <div className="h-full w-full bg-light-bg dark:bg-dark-bg text-light-text dark:text-dark-text flex font-sans safe-left-padding safe-right-padding">
-                {!activeWorkoutSession && <Sidebar activeView={activeView} setActiveView={handleNavClick} />}
+                {!isFullScreenView && <Sidebar activeView={activeView} setActiveView={handleNavClick} />}
                 
                 <div className="flex-1 flex flex-col h-full w-full max-w-full md:max-w-5xl mx-auto xl:max-w-none xl:mx-0 shadow-2xl xl:shadow-none">
-                    {!activeWorkoutSession && (
+                    {!isFullScreenView && (
                         <header className="flex-shrink-0 bg-light-card dark:bg-dark-card h-16 flex items-center justify-between px-4 xl:px-6 border-b border-light-border dark:border-dark-border safe-top-padding">
                             <h1 className="text-xl font-bold text-light-text dark:text-dark-text">
                                 {activeView}
@@ -335,7 +343,7 @@ const App: React.FC = () => {
                         {renderContent()}
                     </main>
 
-                    {!activeWorkoutSession && (
+                    {!isFullScreenView && (
                         <nav className="flex-shrink-0 bg-light-card dark:bg-dark-card h-20 flex justify-around items-center border-t border-light-border dark:border-dark-border xl:hidden safe-bottom-padding">
                             <NavItem icon={<RepeatIcon className="h-6 w-6" />} label={View.ROUTINES} activeView={activeView} onClick={handleNavClick} />
                             <NavItem icon={<DumbbellIcon className="h-6 w-6" />} label={View.EXERCISES} activeView={activeView} onClick={handleNavClick} />
