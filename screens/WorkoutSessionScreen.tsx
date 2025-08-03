@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp } from '../App';
 import { Exercise, WorkoutSession, LoggedExercise, WorkoutSet, MeasurementType, Unit, PerceivedExertionScale, ExerciseCategory } from '../types';
@@ -239,6 +238,14 @@ const WorkoutSessionScreen: React.FC = () => {
             return { ...log, sets: newSets };
         }));
     };
+
+    const handleBarbellWeightChange = (tempId: string, value: string) => {
+        setLoggedExercises(currentLogs => currentLogs.map(log => {
+            if (log.tempId !== tempId) return log;
+            const newWeight = value === '' ? undefined : Number(value);
+            return { ...log, barbellWeight: newWeight };
+        }));
+    };
     
     const handleAddSet = (tempId: string) => {
         setLoggedExercises(currentLogs => currentLogs.map(log => 
@@ -278,7 +285,14 @@ const WorkoutSessionScreen: React.FC = () => {
     
                     if (isCountType) {
                         if (set.reps === undefined) {
-                            set.reps = originalSet.reps ?? originalSet.repsMin; 
+                            // When completing a set with a rep range, default to the minimum value.
+                            // This is more explicit than `??` and prioritizes the range.
+                            if (originalSet.repsMin !== undefined) {
+                                set.reps = originalSet.repsMin;
+                            } else {
+                                // Fallback for sets that only have a single `reps` value defined.
+                                set.reps = originalSet.reps;
+                            }
                         }
                     } else { // Time-based
                         if (set.time === undefined) {
@@ -422,7 +436,14 @@ const WorkoutSessionScreen: React.FC = () => {
                                             <DumbbellIcon className="h-6 w-6 text-light-text-secondary dark:text-dark-text-secondary" />
                                         )}
                                     </div>
-                                    <h3 className="text-lg font-semibold text-light-text dark:text-dark-text">{exercise.name}</h3>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <h3 className="text-lg font-semibold text-light-text dark:text-dark-text">{exercise.name}</h3>
+                                        {exercise.isCounterweight && (
+                                            <span className="text-xs bg-gray-200 dark:bg-gray-700 text-light-text-secondary dark:text-dark-text-secondary px-2 py-0.5 rounded-full whitespace-nowrap">
+                                                Contrapeso
+                                            </span>
+                                        )}
+                                    </div>
                                     <button type="button" onClick={() => setInfoExercise(exercise)} className="p-1 flex items-center justify-center text-light-text-secondary dark:text-dark-text-secondary hover:text-blue-500" aria-label={`Informações sobre ${exercise.name}`}>
                                         <InfoIcon className="h-5 w-5" />
                                     </button>
@@ -439,6 +460,22 @@ const WorkoutSessionScreen: React.FC = () => {
                                 rows={2}
                                 className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2 text-sm"
                             />
+
+                            {exercise.includeBarbellWeight && (
+                                <div className="mt-3">
+                                    <label htmlFor={`barbell-${loggedEx.tempId}`} className="block text-sm font-medium mb-1">Peso da Barra (kg)</label>
+                                    <input
+                                        type="number"
+                                        id={`barbell-${loggedEx.tempId}`}
+                                        inputMode="decimal"
+                                        step="any"
+                                        value={loggedEx.barbellWeight ?? ''}
+                                        placeholder={(originalPlanRef.current[exIndex]?.barbellWeight ?? '').toString()}
+                                        onChange={(e) => handleBarbellWeightChange(loggedEx.tempId, e.target.value)}
+                                        className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2"
+                                    />
+                                </div>
+                            )}
                             
                             <div className="space-y-3">
                                 {setsToRender.map((set, setIndex) => {

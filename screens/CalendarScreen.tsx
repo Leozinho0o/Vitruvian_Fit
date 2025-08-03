@@ -1,9 +1,8 @@
 
-
 import React, { useState, useMemo, useCallback, Fragment, useRef, useEffect } from 'react';
 import { useApp } from '../App';
 import { WorkoutSession, Routine, Folder, PlannedExercise, Unit, Exercise, WorkoutSet } from '../types';
-import { ChevronLeftIcon, ChevronRightIcon, PlayIcon, TrashIcon, XIcon, PlusIcon, PencilIcon, SearchIcon } from '../components/Icons';
+import { ChevronLeftIcon, ChevronRightIcon, PlayIcon, TrashIcon, XIcon, PlusIcon, PencilIcon, SearchIcon, MinusIcon } from '../components/Icons';
 import { getScaleOptions } from '../constants';
 import ConfirmationModal from '../components/ConfirmationModal';
 import { formatSecondsToMMSS, formatDuration } from '../utils';
@@ -67,6 +66,23 @@ const CalendarScreen: React.FC = () => {
     // For touch drag & drop
     const [ghostElement, setGhostElement] = useState<GhostWorkoutItemProps | null>(null);
     const dragStartInfo = useRef<{ x: number; y: number; workout: WorkoutSession; routine: Routine | undefined; } | null>(null);
+
+    // Zoom state
+    const ZOOM_LEVELS = [
+      { containerW: 'min-w-[42rem]', cellH: 'min-h-[7.5rem]' }, // Small
+      { containerW: 'min-w-[56rem]', cellH: 'min-h-[10rem]' },  // Default
+      { containerW: 'min-w-[70rem]', cellH: 'min-h-[12.5rem]' },// Large
+      { containerW: 'min-w-[84rem]', cellH: 'min-h-[15rem]' }, // X-Large
+    ];
+    const [zoomIndex, setZoomIndex] = useState(0);
+
+    const handleZoomIn = () => {
+        setZoomIndex(prev => Math.min(prev + 1, ZOOM_LEVELS.length - 1));
+    };
+
+    const handleZoomOut = () => {
+        setZoomIndex(prev => Math.max(prev - 1, 0));
+    };
 
     const handlePrevMonth = () => setCurrentDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
     const handleNextMonth = () => setCurrentDate(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
@@ -243,7 +259,7 @@ const CalendarScreen: React.FC = () => {
 
     return (
         <div 
-            className="px-2 xl:px-4 py-4 flex flex-col h-full text-light-text dark:text-dark-text"
+            className="relative px-2 xl:px-4 py-4 flex flex-col h-full text-light-text dark:text-dark-text"
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
             onTouchCancel={handleTouchEnd}
@@ -254,7 +270,7 @@ const CalendarScreen: React.FC = () => {
                 <button onClick={handleNextMonth} className="p-2 rounded-full hover:bg-light-card dark:hover:bg-dark-card flex items-center justify-center"><ChevronRightIcon className="h-6 w-6" /></button>
             </header>
             <div className="flex-grow overflow-x-auto">
-                <div className="min-w-[56rem]">
+                <div className={ZOOM_LEVELS[zoomIndex].containerW}>
                     <div className="grid grid-cols-7 gap-1 text-center text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">
                         {weekdays.map(day => <div key={day}>{day}</div>)}
                     </div>
@@ -266,7 +282,7 @@ const CalendarScreen: React.FC = () => {
                             return (
                                 <div key={index} 
                                      data-date={dayString}
-                                     className={`relative p-1 border border-light-border dark:border-dark-border rounded-md min-h-[8rem] xl:min-h-[10rem] flex flex-col transition-colors duration-200 ${day ? 'hover:bg-light-card dark:hover:bg-dark-card cursor-pointer' : 'bg-transparent border-transparent'} ${isDropTarget ? 'bg-primary/20 border-primary' : ''}`}
+                                     className={`relative p-1 border border-light-border dark:border-dark-border rounded-md ${ZOOM_LEVELS[zoomIndex].cellH} flex flex-col transition-all duration-300 ${day ? 'hover:bg-light-card dark:hover:bg-dark-card cursor-pointer' : 'bg-transparent border-transparent'} ${isDropTarget ? 'bg-primary/20 border-primary' : ''}`}
                                      onClick={() => day && handleDayClick(day)}
                                      onDragOver={(e) => {
                                          e.preventDefault();
@@ -348,6 +364,24 @@ const CalendarScreen: React.FC = () => {
                     message="Tem certeza que deseja apagar este agendamento/registro de treino? Esta ação não pode ser desfeita."
                 />
             )}
+            <div className="absolute bottom-6 right-6 flex flex-col gap-3 z-40">
+                <button 
+                    onClick={handleZoomIn} 
+                    className="bg-primary hover:bg-primary-dark text-white rounded-full p-3 shadow-lg flex items-center justify-center transition-transform hover:scale-110 active:scale-95"
+                    aria-label="Aumentar visualização"
+                    disabled={zoomIndex === ZOOM_LEVELS.length - 1}
+                >
+                    <PlusIcon className="h-6 w-6" />
+                </button>
+                <button 
+                    onClick={handleZoomOut} 
+                    className="bg-primary hover:bg-primary-dark text-white rounded-full p-3 shadow-lg flex items-center justify-center transition-transform hover:scale-110 active:scale-95"
+                    aria-label="Diminuir visualização"
+                    disabled={zoomIndex === 0}
+                >
+                    <MinusIcon className="h-6 w-6" />
+                </button>
+            </div>
         </div>
     );
 };

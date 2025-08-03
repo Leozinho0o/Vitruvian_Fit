@@ -78,11 +78,21 @@ export const parseEffortToNumber = (effort: string | undefined): number => {
 
 // Helper function to get an average or definite rep count from a set
 export const getAverageReps = (set: WorkoutSet): number => {
-    if (set.reps !== undefined) return set.reps;
+    // For planned statistics, prioritize the average of a rep range if it exists.
     if (set.repsMin !== undefined && set.repsMax !== undefined) {
         return (set.repsMin + set.repsMax) / 2;
     }
-    return set.repsMin ?? set.repsMax ?? 0;
+    if (set.repsMin !== undefined) {
+        return set.repsMin;
+    }
+    if (set.repsMax !== undefined) {
+        return set.repsMax;
+    }
+    // Fallback to a single reps value for routines without a range.
+    if (set.reps !== undefined) {
+        return set.reps;
+    }
+    return 0;
 };
 
 // Triggers a vibration on supported mobile devices.

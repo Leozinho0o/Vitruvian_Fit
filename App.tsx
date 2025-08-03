@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { View, Exercise, Routine, Folder, WorkoutSession, Theme } from './types';
+import { View, Exercise, Routine, Folder, WorkoutSession, Theme, UserMeasurements, Evaluation } from './types';
 import { INITIAL_EXERCISES, INITIAL_ROUTINES, INITIAL_FOLDERS, DEFAULT_MUSCLE_GROUPS } from './constants';
 import RoutinesScreen from './screens/RoutinesScreen';
 import CalendarScreen from './screens/CalendarScreen';
@@ -10,6 +10,10 @@ import SettingsScreen from './screens/SettingsScreen';
 import StatsScreen from './screens/StatsScreen';
 import Sidebar from './components/Sidebar';
 import ExerciseFormScreen from './screens/ExerciseFormScreen';
+import MeasurementsScreen from './screens/MeasurementsScreen';
+import MuscleGroupsScreen from './screens/MuscleGroupsScreen';
+import ConfirmationModal from './components/ConfirmationModal';
+
 
 import { DumbbellIcon, RepeatIcon, CalendarIcon, BarChartIcon, SettingsIcon } from './components/Icons';
 
@@ -60,6 +64,8 @@ const App: React.FC = () => {
     const [folders, setFolders] = useLocalStorage<Folder[]>('vitruvian_fit_folders', INITIAL_FOLDERS);
     const [workouts, setWorkouts] = useLocalStorage<WorkoutSession[]>('vitruvian_fit_workouts', []);
     const [muscleGroups, setMuscleGroups] = useLocalStorage<string[]>('vitruvian_fit_muscleGroups', DEFAULT_MUSCLE_GROUPS);
+    const [evaluations, setEvaluations] = useLocalStorage<Evaluation[]>('vitruvian_fit_evaluations', []);
+
 
     // Theme state
     const [theme, setTheme] = useLocalStorage<Theme>('vitruvian_fit_theme', Theme.SYSTEM);
@@ -67,6 +73,11 @@ const App: React.FC = () => {
     // Active workout state
     const [activeWorkoutSession, setActiveWorkoutSession] = useState<WorkoutSession | null>(null);
     const [editingExercise, setEditingExercise] = useState<Exercise | 'new' | null>(null);
+    const [isMeasurementsScreenOpen, setIsMeasurementsScreenOpen] = useState(false);
+    const [isMuscleGroupsScreenOpen, setIsMuscleGroupsScreenOpen] = useState(false);
+    const [selectedEvaluationDate, setSelectedEvaluationDate] = useState<string | null>(null);
+    const [infoModalContent, setInfoModalContent] = useState<{ title: string; message: string } | null>(null);
+
 
     // Apply theme effect
     useEffect(() => {
@@ -212,6 +223,32 @@ const App: React.FC = () => {
         setRoutines(prev => prev.map(r => r.id === routineId ? { ...r, folderId } : r));
     }, [setRoutines]);
 
+    const reorderRoutines = useCallback((draggedRoutineId: string, targetRoutineId: string) => {
+        setRoutines(prevRoutines => {
+            const draggedIndex = prevRoutines.findIndex(r => r.id === draggedRoutineId);
+            const targetIndex = prevRoutines.findIndex(r => r.id === targetRoutineId);
+
+            if (draggedIndex === -1 || targetIndex === -1) {
+                return prevRoutines;
+            }
+            
+            const draggedRoutine = prevRoutines[draggedIndex];
+            const targetRoutine = prevRoutines[targetIndex];
+
+            // Only allow reordering within the same folder
+            if (draggedRoutine.folderId !== targetRoutine.folderId) {
+                return prevRoutines;
+            }
+
+            const newRoutines = [...prevRoutines];
+            newRoutines.splice(draggedIndex, 1);
+            const newTargetIndex = newRoutines.findIndex(r => r.id === targetRoutineId);
+            newRoutines.splice(newTargetIndex, 0, draggedRoutine);
+
+            return newRoutines;
+        });
+    }, [setRoutines]);
+
     const addFolder = useCallback((folder: Omit<Folder, 'id'>) => {
         setFolders(prev => [...prev, { ...folder, id: `f${Date.now()}` }]);
     }, [setFolders]);
@@ -246,6 +283,22 @@ const App: React.FC = () => {
             return;
         }
 
+        // Check for counterweight exercises and missing body mass
+        const hasCounterweightExercise = routine.plannedExercises.some(pe => {
+            const exercise = exercises.find(e => e.id === pe.exerciseId);
+            return exercise?.isCounterweight;
+        });
+
+        const hasBodyMass = evaluations.some(e => e.measurements.bodyMass && e.measurements.bodyMass > 0);
+
+        if (hasCounterweightExercise && !hasBodyMass) {
+            setInfoModalContent({
+                title: 'Massa Corporal Necessária',
+                message: 'Esta rotina contém exercícios de contrapeso. Para calcular a carga corretamente, por favor, adicione sua massa corporal em uma avaliação nas Configurações antes de iniciar o treino.'
+            });
+            return; // Stop the workout from starting
+        }
+
         const newSession: WorkoutSession = {
             id: `ws_temp_${Date.now()}`, // Temporary ID to indicate it's a new, unsaved session
             routineId: routine.id,
@@ -258,7 +311,28 @@ const App: React.FC = () => {
 
         // Do NOT add to the main workouts list yet. It will be added only when 'Finish Workout' is clicked.
         setActiveWorkoutSession(newSession);
-    }, [routines]);
+    }, [routines, exercises, evaluations, setActiveWorkoutSession]);
+
+    const saveEvaluation = useCallback((evaluationToSave: Evaluation) => {
+        setEvaluations(prev => {
+            const existingIndex = prev.findIndex(e => e.date === evaluationToSave.date);
+            const newEvals = [...prev];
+            if (existingIndex > -1) {
+                // Update existing
+                newEvals[existingIndex] = evaluationToSave;
+            } else {
+                // Add new
+                newEvals.push(evaluationToSave);
+            }
+            // Sort by date descending
+            newEvals.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            return newEvals;
+        });
+    }, [setEvaluations]);
+
+    const deleteEvaluation = useCallback((dateToDelete: string) => {
+        setEvaluations(prev => prev.filter(e => e.date !== dateToDelete));
+    }, [setEvaluations]);
 
     const contextValue = useMemo(() => ({
         exercises, setExercises,
@@ -266,8 +340,12 @@ const App: React.FC = () => {
         folders, setFolders,
         workouts, setWorkouts,
         muscleGroups, setMuscleGroups,
+        evaluations,
+        selectedEvaluationDate, setSelectedEvaluationDate,
         activeWorkoutSession, setActiveWorkoutSession,
         editingExercise, setEditingExercise,
+        isMeasurementsScreenOpen, setIsMeasurementsScreenOpen,
+        isMuscleGroupsScreenOpen, setIsMuscleGroupsScreenOpen,
         theme, setTheme,
         addExercise,
         updateExercise,
@@ -278,6 +356,7 @@ const App: React.FC = () => {
         deleteRoutine,
         duplicateRoutine,
         moveRoutineToFolder,
+        reorderRoutines,
         addFolder,
         updateFolder,
         deleteFolder,
@@ -287,19 +366,28 @@ const App: React.FC = () => {
         addMuscleGroup,
         editMuscleGroup,
         deleteMuscleGroup,
+        saveEvaluation,
+        deleteEvaluation,
         startWorkoutFromRoutine,
     }), [
-        exercises, routines, folders, workouts, muscleGroups, activeWorkoutSession, editingExercise, theme,
+        exercises, routines, folders, workouts, muscleGroups, evaluations, activeWorkoutSession, editingExercise, theme, isMeasurementsScreenOpen, isMuscleGroupsScreenOpen, selectedEvaluationDate,
         addExercise, updateExercise, deleteExercise, duplicateExercise,
-        addRoutine, updateRoutine, deleteRoutine, duplicateRoutine, moveRoutineToFolder,
+        addRoutine, updateRoutine, deleteRoutine, duplicateRoutine, moveRoutineToFolder, reorderRoutines,
         addFolder, updateFolder, deleteFolder, 
         logWorkout, updateWorkout, deleteWorkout, 
         addMuscleGroup, editMuscleGroup, deleteMuscleGroup,
+        saveEvaluation, deleteEvaluation,
         startWorkoutFromRoutine,
-        setExercises, setRoutines, setFolders, setWorkouts, setMuscleGroups, setTheme,
+        setExercises, setRoutines, setFolders, setWorkouts, setMuscleGroups, setEvaluations, setTheme,
     ]);
 
     const renderContent = () => {
+        if (isMuscleGroupsScreenOpen) {
+            return <MuscleGroupsScreen />;
+        }
+        if (isMeasurementsScreenOpen) {
+            return <MeasurementsScreen />;
+        }
         if (activeWorkoutSession) {
             return <WorkoutSessionScreen />;
         }
@@ -320,7 +408,7 @@ const App: React.FC = () => {
         setActiveView(view);
     }
 
-    const isFullScreenView = activeWorkoutSession || editingExercise;
+    const isFullScreenView = activeWorkoutSession || editingExercise || isMeasurementsScreenOpen || isMuscleGroupsScreenOpen;
 
     return (
         <AppContext.Provider value={contextValue}>
@@ -352,6 +440,18 @@ const App: React.FC = () => {
                         </nav>
                     )}
                 </div>
+                {infoModalContent && (
+                    <ConfirmationModal
+                        isOpen={true}
+                        onClose={() => setInfoModalContent(null)}
+                        onConfirm={() => setInfoModalContent(null)}
+                        title={infoModalContent.title}
+                        message={infoModalContent.message}
+                        confirmText="OK"
+                        showCancelButton={false}
+                        variant="info"
+                    />
+                )}
             </div>
         </AppContext.Provider>
     );

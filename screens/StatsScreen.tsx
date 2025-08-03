@@ -1,7 +1,6 @@
-
 import React, { useMemo, useState } from 'react';
 import { useApp } from '../App';
-import { WorkoutSession, Routine, ExerciseCategory, Unit, MeasurementType } from '../types';
+import { WorkoutSession, Routine, ExerciseCategory, Unit, MeasurementType, Evaluation } from '../types';
 import { ChevronRightIcon, FileTextIcon } from '../components/Icons';
 import { BarChart, HorizontalBarChart, ChartData } from '../components/Charts';
 import { parseEffortToNumber } from '../utils';
@@ -14,7 +13,7 @@ const formatDateForInput = (date: Date): string => {
 
 // Main StatsScreen Component
 const StatsScreen: React.FC = () => {
-    const { workouts, routines, exercises, muscleGroups } = useApp();
+    const { workouts, routines, exercises, muscleGroups, evaluations } = useApp();
     const [isGeralExpanded, setIsGeralExpanded] = useState(true);
     const [isResistidoExpanded, setIsResistidoExpanded] = useState(true);
     const [isCardioExpanded, setIsCardioExpanded] = useState(true);
@@ -163,6 +162,7 @@ const StatsScreen: React.FC = () => {
         const dataByDate = new Map<string, { totalVolume: number; details: { name: string; value: number; color: string }[] }>();
         const start = new Date(`${startDate}T00:00:00`);
         const end = new Date(`${endDate}T23:59:59`);
+        const latestBodyMass = (evaluations && evaluations.length > 0) ? evaluations[0].measurements.bodyMass : undefined;
 
         // Initialize all days in the range
         let currentDate = new Date(start);
@@ -186,9 +186,17 @@ const StatsScreen: React.FC = () => {
                 if (exercise && exercise.category === ExerciseCategory.RESISTED && exercise.unit === Unit.KG) {
                     loggedEx.sets.forEach(set => {
                         const reps = set.reps ?? 0;
-                        const weight = set.value ?? 0;
-                        if (reps > 0 && weight > 0) {
-                            routineVolume += reps * weight;
+                        const setValue = (set.value ?? 0) + (loggedEx.barbellWeight ?? 0);
+                        let calculatedLoad;
+            
+                        if (exercise.isCounterweight && latestBodyMass && setValue > 0) {
+                            calculatedLoad = Math.max(0, latestBodyMass - setValue);
+                        } else {
+                            calculatedLoad = exercise.isWeightDoubled ? (setValue * 2) : setValue;
+                        }
+            
+                        if (reps > 0 && calculatedLoad > 0) {
+                            routineVolume += reps * calculatedLoad;
                         }
                     });
                 }
@@ -209,7 +217,7 @@ const StatsScreen: React.FC = () => {
             value: Math.round(data.totalVolume), // Round to nearest integer for display
             details: data.details.map(d => ({ ...d, value: Math.round(d.value) })),
         }));
-    }, [filteredWorkouts, routines, exercises, startDate, endDate]);
+    }, [filteredWorkouts, routines, exercises, startDate, endDate, evaluations]);
 
     const dailyInternalLoadData = useMemo<ChartData[]>(() => {
         if (!startDate || !endDate) return [];
@@ -217,6 +225,7 @@ const StatsScreen: React.FC = () => {
         const dataByDate = new Map<string, { totalLoad: number; details: { name: string; value: number; color: string }[] }>();
         const start = new Date(`${startDate}T00:00:00`);
         const end = new Date(`${endDate}T23:59:59`);
+        const latestBodyMass = (evaluations && evaluations.length > 0) ? evaluations[0].measurements.bodyMass : undefined;
     
         // Initialize all days in the range
         let currentDate = new Date(start);
@@ -240,10 +249,20 @@ const StatsScreen: React.FC = () => {
                 if (exercise && exercise.category === ExerciseCategory.RESISTED) {
                     loggedEx.sets.forEach(set => {
                         const reps = set.reps ?? 0;
-                        const weight = set.value ?? 0;
+                        const setValue = (set.value ?? 0) + (loggedEx.barbellWeight ?? 0);
+                        let calculatedLoad;
+
+                        if (exercise.isCounterweight && latestBodyMass && setValue > 0) {
+                            calculatedLoad = Math.max(0, latestBodyMass - setValue);
+                        } else {
+                            calculatedLoad = exercise.isWeightDoubled ? (setValue * 2) : setValue;
+                        }
+                        
                         const effortValue = parseEffortToNumber(set.effort);
-                        const weightedLoad = reps * weight * effortValue;
-                        routineInternalLoad += weightedLoad;
+                        if (reps > 0 && calculatedLoad > 0 && effortValue > 0) {
+                            const weightedLoad = reps * calculatedLoad * effortValue;
+                            routineInternalLoad += weightedLoad;
+                        }
                     });
                 }
             });
@@ -263,7 +282,7 @@ const StatsScreen: React.FC = () => {
             value: parseFloat(data.totalLoad.toFixed(2)),
             details: data.details.map(d => ({ ...d, value: parseFloat(d.value.toFixed(2)) })),
         }));
-    }, [filteredWorkouts, routines, exercises, startDate, endDate]);
+    }, [filteredWorkouts, routines, exercises, startDate, endDate, evaluations]);
     
     const seriesByMuscleGroupData = useMemo<ChartData[]>(() => {
         const dataByMuscle = new Map<string, number>();

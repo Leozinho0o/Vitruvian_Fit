@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Folder, Routine, Exercise, ExerciseCategory, Unit, MeasurementType } from '../types';
+import { Folder, Routine, Exercise, ExerciseCategory, Unit, MeasurementType, Evaluation } from '../types';
 import { useApp } from '../App';
 import { XIcon, BarChartIcon, FileTextIcon } from './Icons';
 import { HorizontalBarChart, ChartData } from './Charts';
@@ -9,6 +9,7 @@ interface FolderStatsModalProps {
     folder: Folder;
     routines: Routine[];
     exercises: Exercise[];
+    evaluations: Evaluation[];
     onClose: () => void;
 }
 
@@ -19,12 +20,13 @@ const StatCard: React.FC<{ title: string; value: string; unit: string }> = ({ ti
     </div>
 );
 
-const FolderStatsModal: React.FC<FolderStatsModalProps> = ({ folder, routines, exercises, onClose }) => {
+const FolderStatsModal: React.FC<FolderStatsModalProps> = ({ folder, routines, exercises, evaluations, onClose }) => {
     const { muscleGroups } = useApp();
     const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
     const folderStats = useMemo(() => {
         const routinesInFolder = routines.filter(r => r.folderId === folder.id);
+        const latestBodyMass = (evaluations && evaluations.length > 0) ? evaluations[0].measurements.bodyMass : undefined;
         
         let totalVolume = 0;
         let totalInternalLoadResisted = 0;
@@ -52,10 +54,20 @@ const FolderStatsModal: React.FC<FolderStatsModalProps> = ({ folder, routines, e
                     
                     if (exercise.category === ExerciseCategory.RESISTED) {
                         if (exercise.unit === Unit.KG) {
-                            const weight = set.value ?? 0;
-                            if (avgReps > 0 && weight > 0) {
-                                totalVolume += avgReps * weight;
-                                totalInternalLoadResisted += avgReps * weight * effort;
+                            const setValue = (set.value ?? 0) + (plannedEx.barbellWeight ?? 0);
+                            let calculatedLoad;
+        
+                            if (exercise.isCounterweight && latestBodyMass && setValue > 0) {
+                                calculatedLoad = Math.max(0, latestBodyMass - setValue);
+                            } else {
+                                calculatedLoad = exercise.isWeightDoubled ? (setValue * 2) : setValue;
+                            }
+                            
+                            if (avgReps > 0 && calculatedLoad > 0) {
+                                totalVolume += avgReps * calculatedLoad;
+                                if (effort > 0) {
+                                    totalInternalLoadResisted += avgReps * calculatedLoad * effort;
+                                }
                             }
                         }
                         uniqueMuscles.forEach(m => {
@@ -99,7 +111,7 @@ const FolderStatsModal: React.FC<FolderStatsModalProps> = ({ folder, routines, e
             seriesByMuscleFlex: mapToChartData(seriesByMuscleFlex),
         };
 
-    }, [folder, routines, exercises, muscleGroups]);
+    }, [folder, routines, exercises, muscleGroups, evaluations]);
 
     const handleGeneratePdf = async () => {
         setIsGeneratingPdf(true);

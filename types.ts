@@ -1,5 +1,11 @@
 
 
+
+export interface Evaluation {
+  date: string; // YYYY-MM-DD
+  measurements: UserMeasurements;
+}
+
 export enum ExerciseCategory {
   RESISTED = 'Resistido',
   CARDIO = 'Cardiovascular',
@@ -25,6 +31,39 @@ export enum PerceivedExertionScale {
   PSE = 'PSE', // PSE (Borg)
 }
 
+export enum Gender {
+  MALE = 'Masculino',
+  FEMALE = 'Feminino',
+}
+
+export interface UserMeasurements {
+  // Dados pessoais
+  bodyMass?: number;
+  age?: number;
+  gender?: Gender;
+  statureCm?: number;
+  statureM?: number; // Calculated
+
+  // Dobras Cutâneas (mm)
+  subscapularFold?: number;
+  tricepsFold?: number;
+  bicepsFold?: number;
+  pectoralFold?: number;
+  midaxillaryFold?: number;
+  suprailiacFold?: number;
+  abdominalFold?: number;
+  thighFold?: number;
+  medialCalfFold?: number;
+
+  // Perímetros
+  abdominalPerimeter?: number; // ao nível do umbigo (cm)
+  forearmPerimeter?: number; // Antebraço relaxado (cm)
+  biStyloidPerimeter?: number; // Biestiloide Rádio-Ulnar (cm)
+  biCondylarPerimeter?: number; // Bicondiliano Femural (cm)
+  waistPerimeter?: number; // cintura (m)
+}
+
+
 export interface Exercise {
   id: string;
   name: string;
@@ -37,6 +76,9 @@ export interface Exercise {
   notes?: string;
   imageUrl?: string;
   videoUrl?: string;
+  includeBarbellWeight?: boolean;
+  isWeightDoubled?: boolean;
+  isCounterweight?: boolean;
 }
 
 export interface WorkoutSet {
@@ -53,6 +95,7 @@ export interface PlannedExercise {
   exerciseId: string;
   sets: WorkoutSet[];
   notes?: string;
+  barbellWeight?: number;
 }
 
 export interface Routine {
@@ -74,6 +117,7 @@ export interface LoggedExercise {
   exerciseId: string;
   sets: WorkoutSet[];
   notes?: string;
+  barbellWeight?: number;
 }
 
 export interface WorkoutSession {

@@ -1,4 +1,5 @@
 
+
 import React, { useState, useMemo, useRef } from 'react';
 import { useApp } from '../App';
 import { Exercise, ExerciseCategory, MeasurementType, Unit, PerceivedExertionScale } from '../types';
@@ -29,6 +30,11 @@ const ExerciseFormScreen: React.FC = () => {
     const [imageUrl, setImageUrl] = useState(exerciseToEdit?.imageUrl || '');
     const [videoUrl, setVideoUrl] = useState(exerciseToEdit?.videoUrl || '');
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const [includeBarbellWeight, setIncludeBarbellWeight] = useState(exerciseToEdit?.includeBarbellWeight || false);
+    const [isWeightDoubled, setIsWeightDoubled] = useState(exerciseToEdit?.isWeightDoubled || false);
+    const [isCounterweight, setIsCounterweight] = useState(exerciseToEdit?.isCounterweight || false);
+
 
     const onClose = () => {
         setEditingExercise(null);
@@ -126,6 +132,9 @@ const ExerciseFormScreen: React.FC = () => {
             perceivedExertionScale,
             imageUrl: imageUrl.trim() || undefined,
             videoUrl: videoUrl.trim() || undefined,
+            includeBarbellWeight: category === ExerciseCategory.RESISTED ? includeBarbellWeight : false,
+            isWeightDoubled: category === ExerciseCategory.RESISTED ? isWeightDoubled : false,
+            isCounterweight: category === ExerciseCategory.RESISTED ? isCounterweight : false,
         };
 
         if (exerciseToEdit) {
@@ -185,6 +194,40 @@ const ExerciseFormScreen: React.FC = () => {
                                     allowDeselect={false}
                                 />
                             </div>
+
+                            {category === ExerciseCategory.RESISTED && (
+                                <div className="bg-light-bg dark:bg-dark-bg p-3 rounded-lg">
+                                    <div className="space-y-2">
+                                        <label className="flex items-center space-x-3 cursor-pointer text-sm text-light-text dark:text-dark-text">
+                                            <input
+                                                type="checkbox"
+                                                checked={includeBarbellWeight}
+                                                onChange={(e) => setIncludeBarbellWeight(e.target.checked)}
+                                                className="h-4 w-4 rounded text-primary bg-light-card dark:bg-dark-card border-light-border dark:border-dark-border focus:ring-primary"
+                                            />
+                                            <span>Peso da barra</span>
+                                        </label>
+                                        <label className="flex items-center space-x-3 cursor-pointer text-sm text-light-text dark:text-dark-text">
+                                            <input
+                                                type="checkbox"
+                                                checked={isWeightDoubled}
+                                                onChange={(e) => setIsWeightDoubled(e.target.checked)}
+                                                className="h-4 w-4 rounded text-primary bg-light-card dark:bg-dark-card border-light-border dark:border-dark-border focus:ring-primary"
+                                            />
+                                            <span>Peso 2x</span>
+                                        </label>
+                                        <label className="flex items-center space-x-3 cursor-pointer text-sm text-light-text dark:text-dark-text">
+                                            <input
+                                                type="checkbox"
+                                                checked={isCounterweight}
+                                                onChange={(e) => setIsCounterweight(e.target.checked)}
+                                                className="h-4 w-4 rounded text-primary bg-light-card dark:bg-dark-card border-light-border dark:border-dark-border focus:ring-primary"
+                                            />
+                                            <span>Contrapeso</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            )}
 
                             <div className="grid grid-cols-2 gap-4">
                                 <div>

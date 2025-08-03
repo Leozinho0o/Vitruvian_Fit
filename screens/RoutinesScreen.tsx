@@ -1,7 +1,6 @@
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp } from '../App';
-import { Routine, Folder, Exercise, ExerciseCategory, PlannedExercise, WorkoutSet, MeasurementType, Unit, PerceivedExertionScale } from '../types';
+import { Routine, Folder, Exercise, ExerciseCategory, PlannedExercise, WorkoutSet, MeasurementType, Unit, PerceivedExertionScale, Evaluation } from '../types';
 import { FolderIcon, PlusIcon, PencilIcon, TrashIcon, XIcon, ChevronRightIcon, PlayIcon, CheckCircleIcon, CopyIcon, SearchIcon, InfoIcon, DumbbellIcon, GripVerticalIcon, ChevronDownIcon } from '../components/Icons';
 import { ROUTINE_COLORS, getScaleOptions } from '../constants';
 import ConfirmationModal from '../components/ConfirmationModal';
@@ -60,7 +59,7 @@ const TimeInput: React.FC<TimeInputProps> = ({ id, valueInSeconds, onChangeInSec
 
 // Main Component
 const RoutinesScreen = () => {
-    const { routines, folders, exercises, addRoutine, updateRoutine, deleteRoutine, duplicateRoutine, addFolder, updateFolder, deleteFolder, moveRoutineToFolder, startWorkoutFromRoutine } = useApp();
+    const { routines, folders, exercises, addRoutine, updateRoutine, deleteRoutine, duplicateRoutine, addFolder, updateFolder, deleteFolder, moveRoutineToFolder, startWorkoutFromRoutine, reorderRoutines, evaluations } = useApp();
 
     const [isRoutineModalOpen, setIsRoutineModalOpen] = useState(false);
     const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
@@ -73,6 +72,7 @@ const RoutinesScreen = () => {
     const [confirmDeleteFolderInfo, setConfirmDeleteFolderInfo] = useState<{ id: string; name: string } | null>(null);
     
     const [dropTarget, setDropTarget] = useState<string | null>(null);
+    const [draggingRoutineId, setDraggingRoutineId] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
 
     const addOptionsRef = useRef<HTMLDivElement>(null);
@@ -156,8 +156,14 @@ const RoutinesScreen = () => {
     const handleDropOnRoot = (e: React.DragEvent) => {
         e.preventDefault();
         const routineId = e.dataTransfer.getData('text/plain');
-        moveRoutineToFolder(routineId, null);
+        if (routineId) {
+            const droppedRoutine = routines.find(r => r.id === routineId);
+            if (droppedRoutine && droppedRoutine.folderId !== null) {
+                moveRoutineToFolder(routineId, null);
+            }
+        }
         setDropTarget(null);
+        setDraggingRoutineId(null);
     }
 
     return (
@@ -245,6 +251,9 @@ const RoutinesScreen = () => {
                         }}
                         isDropTarget={dropTarget === folder.id}
                         setDropTarget={setDropTarget}
+                        draggingRoutineId={draggingRoutineId}
+                        setDraggingRoutineId={setDraggingRoutineId}
+                        reorderRoutines={reorderRoutines}
                     />
                 ))}
                 {rootRoutines.map((routine: Routine) => (
@@ -268,6 +277,19 @@ const RoutinesScreen = () => {
                             e.stopPropagation();
                             startWorkoutFromRoutine(routine.id);
                         }}
+                        onDragStart={(e) => {
+                            e.stopPropagation();
+                            e.dataTransfer.setData('text/plain', routine.id);
+                            e.dataTransfer.effectAllowed = "move";
+                            setDraggingRoutineId(routine.id);
+                        }}
+                        onDragEnter={() => {
+                            if (draggingRoutineId && draggingRoutineId !== routine.id) {
+                                reorderRoutines(draggingRoutineId, routine.id);
+                            }
+                        }}
+                        onDragEnd={() => setDraggingRoutineId(null)}
+                        isDragging={draggingRoutineId === routine.id}
                     />
                 ))}
                 {searchQuery === '' && !hasOriginalContent && (
@@ -344,6 +366,7 @@ const RoutinesScreen = () => {
                     folder={folderForStats}
                     routines={routines}
                     exercises={exercises}
+                    evaluations={evaluations}
                     onClose={() => setFolderForStats(null)}
                 />
             )}
@@ -384,11 +407,14 @@ interface FolderItemProps {
     onShowStats: (e: React.MouseEvent) => void;
     isDropTarget: boolean;
     setDropTarget: (id: string | null) => void;
+    draggingRoutineId: string | null;
+    setDraggingRoutineId: (id: string | null) => void;
+    reorderRoutines: (draggedId: string, targetId: string) => void;
 }
 
-const FolderItem: React.FC<FolderItemProps> = ({ folder, routines, onEditRoutine, onDeleteRoutine, onDuplicateRoutine, onStartWorkout, onEditFolder, onDeleteFolder, onShowStats, isDropTarget, setDropTarget }) => {
+const FolderItem: React.FC<FolderItemProps> = ({ folder, routines, onEditRoutine, onDeleteRoutine, onDuplicateRoutine, onStartWorkout, onEditFolder, onDeleteFolder, onShowStats, isDropTarget, setDropTarget, draggingRoutineId, setDraggingRoutineId, reorderRoutines }) => {
     const [isExpanded, setIsExpanded] = useState(true);
-    const { moveRoutineToFolder } = useApp();
+    const { moveRoutineToFolder, routines: allRoutines } = useApp();
     const dropRef = React.useRef<HTMLDivElement>(null);
 
 
@@ -411,12 +437,13 @@ const FolderItem: React.FC<FolderItemProps> = ({ folder, routines, onEditRoutine
         e.stopPropagation();
         const routineId = e.dataTransfer.getData('text/plain');
         if (routineId) {
-             const droppedRoutine = routines.find(r => r.id === routineId);
-             if(!droppedRoutine || droppedRoutine.folderId !== folder.id){
+             const droppedRoutine = allRoutines.find(r => r.id === routineId);
+             if(droppedRoutine && droppedRoutine.folderId !== folder.id){
                 moveRoutineToFolder(routineId, folder.id);
              }
         }
         setDropTarget(null);
+        setDraggingRoutineId(null);
     }
 
     return (
@@ -454,6 +481,19 @@ const FolderItem: React.FC<FolderItemProps> = ({ folder, routines, onEditRoutine
                             onDelete={(e) => onDeleteRoutine(e, routine)}
                             onDuplicate={(e) => onDuplicateRoutine(e, routine.id)}
                             onStartWorkout={(e) => onStartWorkout(e, routine.id)}
+                            onDragStart={(e) => {
+                                e.stopPropagation();
+                                e.dataTransfer.setData('text/plain', routine.id);
+                                e.dataTransfer.effectAllowed = "move";
+                                setDraggingRoutineId(routine.id);
+                            }}
+                            onDragEnter={() => {
+                                if (draggingRoutineId && draggingRoutineId !== routine.id) {
+                                    reorderRoutines(draggingRoutineId, routine.id);
+                                }
+                            }}
+                            onDragEnd={() => setDraggingRoutineId(null)}
+                            isDragging={draggingRoutineId === routine.id}
                         />
                     ))}
                     {routines.length === 0 && <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary pl-4 py-2">Esta pasta está vazia. Arraste uma rotina aqui.</p>}
@@ -469,18 +509,22 @@ interface RoutineItemProps {
     onDelete: (e: React.MouseEvent) => void;
     onDuplicate: (e: React.MouseEvent) => void;
     onStartWorkout: (e: React.MouseEvent) => void;
+    onDragStart: (e: React.DragEvent) => void;
+    onDragEnter: (e: React.DragEvent) => void;
+    onDragEnd: (e: React.DragEvent) => void;
+    isDragging: boolean;
 }
 
-const RoutineItem: React.FC<RoutineItemProps> = ({ routine, onEdit, onDelete, onDuplicate, onStartWorkout }) => {
+const RoutineItem: React.FC<RoutineItemProps> = ({ routine, onEdit, onDelete, onDuplicate, onStartWorkout, onDragStart, onDragEnter, onDragEnd, isDragging }) => {
     
     return (
         <div 
-            className="bg-light-bg dark:bg-dark-bg p-3 rounded-lg flex flex-col gap-2 cursor-grab"
+            className={`bg-light-bg dark:bg-dark-bg p-3 rounded-lg flex flex-col gap-2 cursor-grab transition-opacity ${isDragging ? 'opacity-40' : 'opacity-100'}`}
             draggable="true"
-            onDragStart={(e) => {
-                e.dataTransfer.setData('text/plain', routine.id);
-                e.dataTransfer.effectAllowed = "move";
-            }}
+            onDragStart={onDragStart}
+            onDragEnter={onDragEnter}
+            onDragEnd={onDragEnd}
+            onDragOver={(e) => e.preventDefault()}
         >
             {/* Action Buttons */}
             <div className="flex items-center justify-end space-x-1 flex-shrink-0">
@@ -818,8 +862,11 @@ const RoutineFormModal: React.FC<RoutineFormModalProps> = ({ onClose, onSave, ro
                                                 )}
                                             </div>
                                             <div className="flex-grow min-w-0">
-                                                <div className="flex items-center gap-1">
+                                                <div className="flex items-center gap-2 flex-wrap">
                                                     <p className="font-semibold break-words">{exercise.name}</p>
+                                                    {exercise.isCounterweight && (
+                                                        <span className="text-xs bg-gray-200 dark:bg-gray-700 text-light-text-secondary dark:text-dark-text-secondary px-2 py-0.5 rounded-full whitespace-nowrap">Contrapeso</span>
+                                                    )}
                                                     <button type="button" onClick={() => setInfoExercise(exercise)} className="p-1 flex items-center justify-center text-light-text-secondary dark:text-dark-text-secondary hover:text-blue-500 flex-shrink-0" aria-label={`Informações sobre ${exercise.name}`}>
                                                         <InfoIcon className="h-5 w-5" />
                                                     </button>
@@ -835,6 +882,29 @@ const RoutineFormModal: React.FC<RoutineFormModalProps> = ({ onClose, onSave, ro
                                         rows={2}
                                         className="w-full bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-2 text-sm mb-3"
                                     />
+
+                                    {exercise.includeBarbellWeight && (
+                                        <div className="mb-3">
+                                            <label htmlFor={`barbell-${exIndex}`} className="block text-sm font-medium mb-1">Peso da Barra (kg)</label>
+                                            <input
+                                                type="number"
+                                                id={`barbell-${exIndex}`}
+                                                inputMode="decimal"
+                                                step="any"
+                                                value={pex.barbellWeight ?? ''}
+                                                onChange={(e) => {
+                                                    const value = e.target.value ? parseFloat(e.target.value) : undefined;
+                                                    setPlannedExercises(prev => {
+                                                        const newExercises = [...prev];
+                                                        newExercises[exIndex] = { ...newExercises[exIndex], barbellWeight: value };
+                                                        return newExercises;
+                                                    });
+                                                }}
+                                                placeholder="Ex: 20"
+                                                className="w-full bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-2"
+                                            />
+                                        </div>
+                                    )}
                                     
                                     {/* Column Headers */}
                                     <div className="grid grid-cols-12 gap-x-2 items-center text-xs text-center font-medium text-light-text-secondary dark:text-dark-text-secondary mb-2 px-1">
