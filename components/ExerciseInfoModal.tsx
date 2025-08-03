@@ -1,4 +1,5 @@
 
+
 import React, { useMemo } from 'react';
 import { useApp } from '../App';
 import { Exercise, Unit, MeasurementType, PerceivedExertionScale, ExerciseCategory } from '../types';
@@ -13,7 +14,7 @@ interface ExerciseInfoModalProps {
 }
 
 const ExerciseInfoModal: React.FC<ExerciseInfoModalProps> = ({ exercise, onClose }) => {
-    const { workouts, routines } = useApp();
+    const { workouts, routines, evaluations } = useApp();
 
     const youtubeId = useMemo(() => {
         if (!exercise.videoUrl) return null;
@@ -27,20 +28,23 @@ const ExerciseInfoModal: React.FC<ExerciseInfoModalProps> = ({ exercise, onClose
     }, [exercise.videoUrl]);
 
     const stats = useMemo(() => {
+        const completedWorkouts = workouts.filter(w => w.completed && w.date);
+        const latestBodyMass = (evaluations && evaluations.length > 0) ? evaluations[0].measurements.bodyMass : undefined;
+
         switch (exercise.category) {
             case ExerciseCategory.RESISTED: {
                 if (exercise.unit !== Unit.KG) return { type: 'none', data: null, historyData: [] };
     
                 const calculate1RM = (reps: number, load: number) => {
                     if (reps <= 0 || load <= 0) return 0;
-                    return 90.66 + (0.085 * reps * load) + (-5.306 * reps);
+                    // Epley formula is a standard, let's use it for consistency unless another is required.
+                    if (reps === 1) return load;
+                    return load * (1 + reps / 30);
                 };
     
                 let highest1RM = 0;
                 let setForHighest1RM: { reps: number; weight: number } | null = null;
                 const dailyMax1RMs = new Map<string, { max1RM: number; routineId: string }>();
-    
-                const completedWorkouts = workouts.filter(w => w.completed && w.date);
     
                 for (const session of completedWorkouts) {
                     let sessionMax1RM = 0;
@@ -48,13 +52,22 @@ const ExerciseInfoModal: React.FC<ExerciseInfoModalProps> = ({ exercise, onClose
                     for (const loggedEx of session.loggedExercises) {
                         if (loggedEx.exerciseId === exercise.id) {
                             for (const set of loggedEx.sets) {
-                                const weight = set.value ?? 0;
                                 const reps = set.reps ?? 0;
-                                const current1RM = calculate1RM(reps, weight);
+                                const setWeight = set.value ?? 0;
+                                const barbellWeight = loggedEx.barbellWeight ?? 0;
+                                let totalLoad = setWeight + barbellWeight;
+
+                                if (exercise.isWeightDoubled) {
+                                    totalLoad *= 2;
+                                } else if (exercise.isCounterweight && latestBodyMass && totalLoad > 0) {
+                                    totalLoad = Math.max(0, latestBodyMass - totalLoad);
+                                }
+                                
+                                const current1RM = calculate1RM(reps, totalLoad);
     
                                 if (current1RM > highest1RM) {
                                     highest1RM = current1RM;
-                                    setForHighest1RM = { reps, weight };
+                                    setForHighest1RM = { reps, weight: totalLoad };
                                 }
     
                                 if (current1RM > sessionMax1RM) {
@@ -103,12 +116,21 @@ const ExerciseInfoModal: React.FC<ExerciseInfoModalProps> = ({ exercise, onClose
                     for (const loggedEx of session.loggedExercises) {
                         if (loggedEx.exerciseId === exercise.id) {
                             for (const set of loggedEx.sets) {
-                                const weight = set.value ?? 0;
                                 const reps = set.reps ?? 0;
-                                if (weight > maxWeight) {
-                                    maxWeight = weight;
+                                const setWeight = set.value ?? 0;
+                                const barbellWeight = loggedEx.barbellWeight ?? 0;
+                                let totalLoad = setWeight + barbellWeight;
+
+                                if (exercise.isWeightDoubled) {
+                                    totalLoad *= 2;
+                                } else if (exercise.isCounterweight && latestBodyMass && totalLoad > 0) {
+                                    totalLoad = Math.max(0, latestBodyMass - totalLoad);
+                                }
+
+                                if (totalLoad > maxWeight) {
+                                    maxWeight = totalLoad;
                                     repsAtMaxWeight = reps;
-                                } else if (weight === maxWeight && weight > 0) {
+                                } else if (totalLoad === maxWeight && totalLoad > 0) {
                                     repsAtMaxWeight = Math.max(repsAtMaxWeight, reps);
                                 }
                             }
@@ -190,7 +212,7 @@ const ExerciseInfoModal: React.FC<ExerciseInfoModalProps> = ({ exercise, onClose
             default:
                 return { type: 'none', data: null };
         }
-    }, [exercise, workouts, routines]);
+    }, [exercise, workouts, routines, evaluations]);
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4" aria-modal="true" role="dialog">
