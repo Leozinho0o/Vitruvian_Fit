@@ -867,6 +867,12 @@ const RoutineFormModal: React.FC<RoutineFormModalProps> = ({ onClose, onSave, ro
                                                     {exercise.isCounterweight && (
                                                         <span className="text-xs bg-gray-200 dark:bg-gray-700 text-light-text-secondary dark:text-dark-text-secondary px-2 py-0.5 rounded-full whitespace-nowrap">Contrapeso</span>
                                                     )}
+                                                    {exercise.includeBarbellWeight && (
+                                                        <span className="text-xs bg-gray-200 dark:bg-gray-700 text-light-text-secondary dark:text-dark-text-secondary px-2 py-0.5 rounded-full whitespace-nowrap">Peso da Barra</span>
+                                                    )}
+                                                    {exercise.isWeightDoubled && (
+                                                        <span className="text-xs bg-gray-200 dark:bg-gray-700 text-light-text-secondary dark:text-dark-text-secondary px-2 py-0.5 rounded-full whitespace-nowrap">Peso 2x</span>
+                                                    )}
                                                     <button type="button" onClick={() => setInfoExercise(exercise)} className="p-1 flex items-center justify-center text-light-text-secondary dark:text-dark-text-secondary hover:text-blue-500 flex-shrink-0" aria-label={`Informações sobre ${exercise.name}`}>
                                                         <InfoIcon className="h-5 w-5" />
                                                     </button>

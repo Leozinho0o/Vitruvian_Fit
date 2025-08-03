@@ -1,4 +1,5 @@
 
+
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { View, Exercise, Routine, Folder, WorkoutSession, Theme, UserMeasurements, Evaluation } from './types';
 import { INITIAL_EXERCISES, INITIAL_ROUTINES, INITIAL_FOLDERS, DEFAULT_MUSCLE_GROUPS } from './constants';
@@ -12,6 +13,7 @@ import Sidebar from './components/Sidebar';
 import ExerciseFormScreen from './screens/ExerciseFormScreen';
 import MeasurementsScreen from './screens/MeasurementsScreen';
 import MuscleGroupsScreen from './screens/MuscleGroupsScreen';
+import PhysicalEvaluationScreen from './screens/PhysicalEvaluationScreen';
 import ConfirmationModal from './components/ConfirmationModal';
 
 
@@ -75,8 +77,9 @@ const App: React.FC = () => {
     const [editingExercise, setEditingExercise] = useState<Exercise | 'new' | null>(null);
     const [isMeasurementsScreenOpen, setIsMeasurementsScreenOpen] = useState(false);
     const [isMuscleGroupsScreenOpen, setIsMuscleGroupsScreenOpen] = useState(false);
+    const [isPhysicalEvaluationScreenOpen, setIsPhysicalEvaluationScreenOpen] = useState(false);
     const [selectedEvaluationDate, setSelectedEvaluationDate] = useState<string | null>(null);
-    const [infoModalContent, setInfoModalContent] = useState<{ title: string; message: string } | null>(null);
+    const [infoModalContent, setInfoModalContent] = useState<{ title: string; message: React.ReactNode; onConfirm?: () => void; confirmText?: string; showCancelButton?: boolean, cancelText?: string; } | null>(null);
 
 
     // Apply theme effect
@@ -294,7 +297,14 @@ const App: React.FC = () => {
         if (hasCounterweightExercise && !hasBodyMass) {
             setInfoModalContent({
                 title: 'Massa Corporal Necessária',
-                message: 'Esta rotina contém exercícios de contrapeso. Para calcular a carga corretamente, por favor, adicione sua massa corporal em uma avaliação nas Configurações antes de iniciar o treino.'
+                message: 'Esta rotina contém exercícios de contrapeso. Para calcular a carga corretamente, é necessário informar sua massa corporal. Deseja ir para a tela de Avaliação Física agora?',
+                confirmText: "Ir para Avaliação",
+                showCancelButton: true,
+                cancelText: "Agora não",
+                onConfirm: () => {
+                    setActiveView(View.SETTINGS);
+                    setIsPhysicalEvaluationScreenOpen(true);
+                }
             });
             return; // Stop the workout from starting
         }
@@ -311,7 +321,7 @@ const App: React.FC = () => {
 
         // Do NOT add to the main workouts list yet. It will be added only when 'Finish Workout' is clicked.
         setActiveWorkoutSession(newSession);
-    }, [routines, exercises, evaluations, setActiveWorkoutSession]);
+    }, [routines, exercises, evaluations, setActiveWorkoutSession, setActiveView, setIsPhysicalEvaluationScreenOpen]);
 
     const saveEvaluation = useCallback((evaluationToSave: Evaluation) => {
         setEvaluations(prev => {
@@ -346,7 +356,9 @@ const App: React.FC = () => {
         editingExercise, setEditingExercise,
         isMeasurementsScreenOpen, setIsMeasurementsScreenOpen,
         isMuscleGroupsScreenOpen, setIsMuscleGroupsScreenOpen,
+        isPhysicalEvaluationScreenOpen, setIsPhysicalEvaluationScreenOpen,
         theme, setTheme,
+        setInfoModalContent,
         addExercise,
         updateExercise,
         deleteExercise,
@@ -370,7 +382,7 @@ const App: React.FC = () => {
         deleteEvaluation,
         startWorkoutFromRoutine,
     }), [
-        exercises, routines, folders, workouts, muscleGroups, evaluations, activeWorkoutSession, editingExercise, theme, isMeasurementsScreenOpen, isMuscleGroupsScreenOpen, selectedEvaluationDate,
+        exercises, routines, folders, workouts, muscleGroups, evaluations, activeWorkoutSession, editingExercise, theme, isMeasurementsScreenOpen, isMuscleGroupsScreenOpen, isPhysicalEvaluationScreenOpen, selectedEvaluationDate,
         addExercise, updateExercise, deleteExercise, duplicateExercise,
         addRoutine, updateRoutine, deleteRoutine, duplicateRoutine, moveRoutineToFolder, reorderRoutines,
         addFolder, updateFolder, deleteFolder, 
@@ -378,10 +390,13 @@ const App: React.FC = () => {
         addMuscleGroup, editMuscleGroup, deleteMuscleGroup,
         saveEvaluation, deleteEvaluation,
         startWorkoutFromRoutine,
-        setExercises, setRoutines, setFolders, setWorkouts, setMuscleGroups, setEvaluations, setTheme,
+        setExercises, setRoutines, setFolders, setWorkouts, setMuscleGroups, setEvaluations, setTheme, setInfoModalContent, setActiveWorkoutSession, setEditingExercise, setIsMeasurementsScreenOpen, setIsMuscleGroupsScreenOpen, setIsPhysicalEvaluationScreenOpen, setSelectedEvaluationDate,
     ]);
 
     const renderContent = () => {
+        if (isPhysicalEvaluationScreenOpen) {
+            return <PhysicalEvaluationScreen />;
+        }
         if (isMuscleGroupsScreenOpen) {
             return <MuscleGroupsScreen />;
         }
@@ -408,7 +423,7 @@ const App: React.FC = () => {
         setActiveView(view);
     }
 
-    const isFullScreenView = activeWorkoutSession || editingExercise || isMeasurementsScreenOpen || isMuscleGroupsScreenOpen;
+    const isFullScreenView = activeWorkoutSession || editingExercise || isMeasurementsScreenOpen || isMuscleGroupsScreenOpen || isPhysicalEvaluationScreenOpen;
 
     return (
         <AppContext.Provider value={contextValue}>
@@ -444,11 +459,15 @@ const App: React.FC = () => {
                     <ConfirmationModal
                         isOpen={true}
                         onClose={() => setInfoModalContent(null)}
-                        onConfirm={() => setInfoModalContent(null)}
+                        onConfirm={() => {
+                            infoModalContent.onConfirm?.();
+                            setInfoModalContent(null)
+                        }}
                         title={infoModalContent.title}
                         message={infoModalContent.message}
-                        confirmText="OK"
-                        showCancelButton={false}
+                        confirmText={infoModalContent.confirmText || "OK"}
+                        cancelText={infoModalContent.cancelText || "Cancelar"}
+                        showCancelButton={infoModalContent.showCancelButton ?? false}
                         variant="info"
                     />
                 )}

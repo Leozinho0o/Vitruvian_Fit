@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp } from '../App';
-import { Exercise, WorkoutSession, LoggedExercise, WorkoutSet, MeasurementType, Unit, PerceivedExertionScale, ExerciseCategory } from '../types';
+import { Exercise, WorkoutSession, LoggedExercise, WorkoutSet, MeasurementType, Unit, PerceivedExertionScale, ExerciseCategory, Evaluation } from '../types';
 import { ChevronLeftIcon, PlusIcon, TrashIcon, XIcon, CheckCircleIcon, ChevronDownIcon, DumbbellIcon, InfoIcon, GripVerticalIcon, SearchIcon } from '../components/Icons';
 import { getScaleOptions } from '../constants';
 import ConfirmationModal from '../components/ConfirmationModal';
@@ -67,7 +67,10 @@ const WorkoutSessionScreen: React.FC = () => {
         workouts,
         updateWorkout,
         logWorkout,
-        deleteWorkout
+        deleteWorkout,
+        evaluations,
+        setInfoModalContent,
+        setIsPhysicalEvaluationScreenOpen
     } = useApp();
     
     // Store the original plan in a ref to use for placeholders. It's stable across re-renders.
@@ -198,6 +201,39 @@ const WorkoutSessionScreen: React.FC = () => {
     }
 
     const handleAddExercise = (exerciseId: string) => {
+        const exerciseToAdd = exercises.find(e => e.id === exerciseId);
+        if (!exerciseToAdd) return;
+
+        const hasBodyMass = evaluations.some((e: Evaluation) => e.measurements.bodyMass && e.measurements.bodyMass > 0);
+
+        if (exerciseToAdd.isCounterweight && !hasBodyMass) {
+            setInfoModalContent({
+                title: 'Massa Corporal Necessária',
+                message: 'Este exercício de contrapeso precisa da sua massa corporal. Por favor, insira este dado na sua avaliação física para continuar.',
+                confirmText: "Ir para Avaliação",
+                showCancelButton: true,
+                cancelText: "Agora não",
+                onConfirm: () => {
+                    if (!activeWorkoutSession) return;
+                    // Construct the current state to save
+                    const currentSessionState: WorkoutSession = {
+                        ...activeWorkoutSession,
+                        // clean up tempId before saving to main state
+                        loggedExercises: loggedExercises.map(({ tempId, ...rest }) => rest),
+                        duration: elapsedTime,
+                    };
+                    setActiveWorkoutSession(currentSessionState);
+                    
+                    // Navigate away
+                    setIsPhysicalEvaluationScreenOpen(true);
+                }
+            });
+            // Don't add the exercise. Wait for user action.
+            // Close the picker modal so the user can see the info modal clearly.
+            setIsExercisePickerOpen(false);
+            return; 
+        }
+
         const newLoggedExercise: TempLoggedExercise = {
             exerciseId,
             sets: [{}],
@@ -441,6 +477,16 @@ const WorkoutSessionScreen: React.FC = () => {
                                         {exercise.isCounterweight && (
                                             <span className="text-xs bg-gray-200 dark:bg-gray-700 text-light-text-secondary dark:text-dark-text-secondary px-2 py-0.5 rounded-full whitespace-nowrap">
                                                 Contrapeso
+                                            </span>
+                                        )}
+                                        {exercise.includeBarbellWeight && (
+                                            <span className="text-xs bg-gray-200 dark:bg-gray-700 text-light-text-secondary dark:text-dark-text-secondary px-2 py-0.5 rounded-full whitespace-nowrap">
+                                                Peso da Barra
+                                            </span>
+                                        )}
+                                        {exercise.isWeightDoubled && (
+                                            <span className="text-xs bg-gray-200 dark:bg-gray-700 text-light-text-secondary dark:text-dark-text-secondary px-2 py-0.5 rounded-full whitespace-nowrap">
+                                                Peso 2x
                                             </span>
                                         )}
                                     </div>
