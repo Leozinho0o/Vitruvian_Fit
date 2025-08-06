@@ -58,10 +58,18 @@ const TimeInput: React.FC<TimeInputProps> = ({ id, valueInSeconds, onChangeInSec
 // Add a temporary ID to each logged exercise for stable keys and state updates
 type TempLoggedExercise = LoggedExercise & { tempId: string };
 
-// Helper function to post messages to the service worker
-const postMessageToSW = (message: any) => {
-    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-        navigator.serviceWorker.controller.postMessage(message);
+// Helper function to post messages to the service worker.
+// This is now async to ensure the service worker is ready.
+const postMessageToSW = async (message: any) => {
+    if ('serviceWorker' in navigator) {
+        try {
+            const registration = await navigator.serviceWorker.ready;
+            if (registration.active) {
+                registration.active.postMessage(message);
+            }
+        } catch (error) {
+            console.error('Vitruvian Fit: Error posting message to Service Worker.', error);
+        }
     }
 };
 
@@ -99,13 +107,13 @@ const WorkoutSessionScreen: React.FC = () => {
             postMessageToSW({ type: 'CLOSE_WORKOUT_NOTIFICATION' });
             return;
         }
-    
-        const showOrUpdateNotification = (time: number) => {
-            // Check for permission inside the function that shows the notification
+
+        const showOrUpdateNotification = async (time: number) => {
             if ('Notification' in window && Notification.permission === 'granted') {
                 const title = `Treino em andamento: ${routine?.name || 'Sessão de Treino'}`;
                 const body = `Duração: ${formatDuration(time)}`;
-                postMessageToSW({
+                // Await the async postMessage function
+                await postMessageToSW({
                     type: 'SHOW_WORKOUT_NOTIFICATION',
                     payload: { title, body }
                 });
@@ -114,20 +122,19 @@ const WorkoutSessionScreen: React.FC = () => {
     
         const setupAndRunNotifications = async () => {
             if ('Notification' in window && Notification.permission === 'default') {
-                // Await the permission request
                 await Notification.requestPermission();
             }
-            // Now that we have awaited, we can check the permission and show the initial notification
-            showOrUpdateNotification(elapsedTime);
+            // Await the show notification call to ensure it is sent before the timer loop gets too far ahead.
+            await showOrUpdateNotification(elapsedTime);
         };
     
-        // Run the async setup
+        // Run the async setup. We don't need to await this at the top level of useEffect.
         setupAndRunNotifications();
     
         const timerId = setInterval(() => {
             setElapsedTime(prevTime => {
                 const newTime = prevTime + 1;
-                // Update notification every 15 seconds to avoid being too spammy
+                // Update notification every 15 seconds. This is a fire-and-forget call.
                 if (newTime > 0 && newTime % 15 === 0) {
                     showOrUpdateNotification(newTime);
                 }
@@ -137,7 +144,7 @@ const WorkoutSessionScreen: React.FC = () => {
     
         return () => {
             clearInterval(timerId);
-            // On unmount (cancel/finish), close the notification
+            // On unmount (cancel/finish), close the notification. Fire-and-forget is fine here.
             postMessageToSW({ type: 'CLOSE_WORKOUT_NOTIFICATION' });
         };
     }, [activeWorkoutSession, routine?.name]);
