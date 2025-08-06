@@ -58,6 +58,13 @@ const TimeInput: React.FC<TimeInputProps> = ({ id, valueInSeconds, onChangeInSec
 // Add a temporary ID to each logged exercise for stable keys and state updates
 type TempLoggedExercise = LoggedExercise & { tempId: string };
 
+// Helper function to post messages to the service worker
+const postMessageToSW = (message: any) => {
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage(message);
+    }
+};
+
 const WorkoutSessionScreen: React.FC = () => {
     const { 
         activeWorkoutSession, 
@@ -82,21 +89,51 @@ const WorkoutSessionScreen: React.FC = () => {
     const [isTimerEditModalOpen, setIsTimerEditModalOpen] = useState(false);
     const [infoExercise, setInfoExercise] = useState<Exercise | null>(null);
     const [draggingId, setDraggingId] = useState<string | null>(null);
-
+    
+    const routine = useMemo(() => 
+        routines.find(r => r.id === activeWorkoutSession?.routineId),
+    [routines, activeWorkoutSession]);
 
     useEffect(() => {
-        if (activeWorkoutSession?.completed) {
-            return; // Don't start timer for completed workouts
+        if (!activeWorkoutSession || activeWorkoutSession.completed) {
+            postMessageToSW({ type: 'CLOSE_WORKOUT_NOTIFICATION' });
+            return;
         }
-
+    
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+    
+        const showNotification = (time: number) => {
+            if (Notification.permission === 'granted') {
+                const title = `Treino em andamento: ${routine?.name || 'Sessão de Treino'}`;
+                const body = `Duração: ${formatDuration(time)}`;
+                postMessageToSW({
+                    type: 'SHOW_WORKOUT_NOTIFICATION',
+                    payload: { title, body }
+                });
+            }
+        };
+    
+        showNotification(elapsedTime);
+    
         const timerId = setInterval(() => {
-            setElapsedTime(prevTime => prevTime + 1);
+            setElapsedTime(prevTime => {
+                const newTime = prevTime + 1;
+                // Update notification every 15 seconds to avoid being too spammy
+                if (newTime > 0 && newTime % 15 === 0) {
+                    showNotification(newTime);
+                }
+                return newTime;
+            });
         }, 1000);
-
+    
         return () => {
             clearInterval(timerId);
+            // On unmount (cancel/finish), close the notification
+            postMessageToSW({ type: 'CLOSE_WORKOUT_NOTIFICATION' });
         };
-    }, [activeWorkoutSession?.completed]);
+    }, [activeWorkoutSession, routine?.name]);
 
     // This function creates the initial state for the workout session.
     // It runs only once when the component mounts.
@@ -133,10 +170,6 @@ const WorkoutSessionScreen: React.FC = () => {
     const [loggedExercises, setLoggedExercises] = useState<TempLoggedExercise[]>(initialLoggedExercises);
     const [isExercisePickerOpen, setIsExercisePickerOpen] = useState(false);
     const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
-
-    const routine = useMemo(() => 
-        routines.find(r => r.id === activeWorkoutSession?.routineId),
-    [routines, activeWorkoutSession]);
     
     const historicalData = useMemo(() => {
         if (!activeWorkoutSession) return new Map<string, LoggedExercise>();
