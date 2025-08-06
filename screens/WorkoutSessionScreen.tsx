@@ -58,18 +58,10 @@ const TimeInput: React.FC<TimeInputProps> = ({ id, valueInSeconds, onChangeInSec
 // Add a temporary ID to each logged exercise for stable keys and state updates
 type TempLoggedExercise = LoggedExercise & { tempId: string };
 
-// Helper function to post messages to the service worker.
-// This is now async to ensure the service worker is ready.
-const postMessageToSW = async (message: any) => {
-    if ('serviceWorker' in navigator) {
-        try {
-            const registration = await navigator.serviceWorker.ready;
-            if (registration.active) {
-                registration.active.postMessage(message);
-            }
-        } catch (error) {
-            console.error('Vitruvian Fit: Error posting message to Service Worker.', error);
-        }
+// Helper function to post messages to the service worker
+const postMessageToSW = (message: any) => {
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage(message);
     }
 };
 
@@ -107,51 +99,45 @@ const WorkoutSessionScreen: React.FC = () => {
             postMessageToSW({ type: 'CLOSE_WORKOUT_NOTIFICATION' });
             return;
         }
-
-        let timerId: number | undefined;
-
-        const startWorkoutFlow = async () => {
-            // 1. Get permission
-            if ('Notification' in window && Notification.permission === 'default') {
-                await Notification.requestPermission();
-            }
-            
-            // 2. Show initial notification if permission is granted
-            if (Notification.permission === 'granted') {
+    
+        const showOrUpdateNotification = (time: number) => {
+            // Check for permission inside the function that shows the notification
+            if ('Notification' in window && Notification.permission === 'granted') {
                 const title = `Treino em andamento: ${routine?.name || 'Sessão de Treino'}`;
-                const body = `Duração: ${formatDuration(elapsedTime)}`;
-                await postMessageToSW({
+                const body = `Duração: ${formatDuration(time)}`;
+                postMessageToSW({
                     type: 'SHOW_WORKOUT_NOTIFICATION',
                     payload: { title, body }
                 });
             }
-
-            // 3. Start the timer
-            timerId = window.setInterval(() => {
-                setElapsedTime(prevTime => {
-                    const newTime = prevTime + 1;
-                    // 4. Update notification every 15 seconds
-                    if (newTime > 0 && newTime % 15 === 0 && Notification.permission === 'granted') {
-                         const title = `Treino em andamento: ${routine?.name || 'Sessão de Treino'}`;
-                         const body = `Duração: ${formatDuration(newTime)}`;
-                         // Fire-and-forget is fine for updates
-                         postMessageToSW({
-                            type: 'SHOW_WORKOUT_NOTIFICATION',
-                            payload: { title, body }
-                         });
-                    }
-                    return newTime;
-                });
-            }, 1000);
         };
-
-        startWorkoutFlow();
-
-        // 5. Cleanup
-        return () => {
-            if (timerId) {
-                clearInterval(timerId);
+    
+        const setupAndRunNotifications = async () => {
+            if ('Notification' in window && Notification.permission === 'default') {
+                // Await the permission request
+                await Notification.requestPermission();
             }
+            // Now that we have awaited, we can check the permission and show the initial notification
+            showOrUpdateNotification(elapsedTime);
+        };
+    
+        // Run the async setup
+        setupAndRunNotifications();
+    
+        const timerId = setInterval(() => {
+            setElapsedTime(prevTime => {
+                const newTime = prevTime + 1;
+                // Update notification every 15 seconds to avoid being too spammy
+                if (newTime > 0 && newTime % 15 === 0) {
+                    showOrUpdateNotification(newTime);
+                }
+                return newTime;
+            });
+        }, 1000);
+    
+        return () => {
+            clearInterval(timerId);
+            // On unmount (cancel/finish), close the notification
             postMessageToSW({ type: 'CLOSE_WORKOUT_NOTIFICATION' });
         };
     }, [activeWorkoutSession, routine?.name]);
