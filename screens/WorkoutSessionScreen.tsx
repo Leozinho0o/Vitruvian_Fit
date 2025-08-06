@@ -100,12 +100,9 @@ const WorkoutSessionScreen: React.FC = () => {
             return;
         }
     
-        if ('Notification' in window && Notification.permission === 'default') {
-            Notification.requestPermission();
-        }
-    
-        const showNotification = (time: number) => {
-            if (Notification.permission === 'granted') {
+        const showOrUpdateNotification = (time: number) => {
+            // Check for permission inside the function that shows the notification
+            if ('Notification' in window && Notification.permission === 'granted') {
                 const title = `Treino em andamento: ${routine?.name || 'Sessão de Treino'}`;
                 const body = `Duração: ${formatDuration(time)}`;
                 postMessageToSW({
@@ -115,14 +112,24 @@ const WorkoutSessionScreen: React.FC = () => {
             }
         };
     
-        showNotification(elapsedTime);
+        const setupAndRunNotifications = async () => {
+            if ('Notification' in window && Notification.permission === 'default') {
+                // Await the permission request
+                await Notification.requestPermission();
+            }
+            // Now that we have awaited, we can check the permission and show the initial notification
+            showOrUpdateNotification(elapsedTime);
+        };
+    
+        // Run the async setup
+        setupAndRunNotifications();
     
         const timerId = setInterval(() => {
             setElapsedTime(prevTime => {
                 const newTime = prevTime + 1;
                 // Update notification every 15 seconds to avoid being too spammy
                 if (newTime > 0 && newTime % 15 === 0) {
-                    showNotification(newTime);
+                    showOrUpdateNotification(newTime);
                 }
                 return newTime;
             });
