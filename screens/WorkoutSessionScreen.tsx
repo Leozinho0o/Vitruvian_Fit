@@ -108,43 +108,50 @@ const WorkoutSessionScreen: React.FC = () => {
             return;
         }
 
-        const showOrUpdateNotification = async (time: number) => {
-            if ('Notification' in window && Notification.permission === 'granted') {
+        let timerId: number | undefined;
+
+        const startWorkoutFlow = async () => {
+            // 1. Get permission
+            if ('Notification' in window && Notification.permission === 'default') {
+                await Notification.requestPermission();
+            }
+            
+            // 2. Show initial notification if permission is granted
+            if (Notification.permission === 'granted') {
                 const title = `Treino em andamento: ${routine?.name || 'Sessão de Treino'}`;
-                const body = `Duração: ${formatDuration(time)}`;
-                // Await the async postMessage function
+                const body = `Duração: ${formatDuration(elapsedTime)}`;
                 await postMessageToSW({
                     type: 'SHOW_WORKOUT_NOTIFICATION',
                     payload: { title, body }
                 });
             }
+
+            // 3. Start the timer
+            timerId = window.setInterval(() => {
+                setElapsedTime(prevTime => {
+                    const newTime = prevTime + 1;
+                    // 4. Update notification every 15 seconds
+                    if (newTime > 0 && newTime % 15 === 0 && Notification.permission === 'granted') {
+                         const title = `Treino em andamento: ${routine?.name || 'Sessão de Treino'}`;
+                         const body = `Duração: ${formatDuration(newTime)}`;
+                         // Fire-and-forget is fine for updates
+                         postMessageToSW({
+                            type: 'SHOW_WORKOUT_NOTIFICATION',
+                            payload: { title, body }
+                         });
+                    }
+                    return newTime;
+                });
+            }, 1000);
         };
-    
-        const setupAndRunNotifications = async () => {
-            if ('Notification' in window && Notification.permission === 'default') {
-                await Notification.requestPermission();
-            }
-            // Await the show notification call to ensure it is sent before the timer loop gets too far ahead.
-            await showOrUpdateNotification(elapsedTime);
-        };
-    
-        // Run the async setup. We don't need to await this at the top level of useEffect.
-        setupAndRunNotifications();
-    
-        const timerId = setInterval(() => {
-            setElapsedTime(prevTime => {
-                const newTime = prevTime + 1;
-                // Update notification every 15 seconds. This is a fire-and-forget call.
-                if (newTime > 0 && newTime % 15 === 0) {
-                    showOrUpdateNotification(newTime);
-                }
-                return newTime;
-            });
-        }, 1000);
-    
+
+        startWorkoutFlow();
+
+        // 5. Cleanup
         return () => {
-            clearInterval(timerId);
-            // On unmount (cancel/finish), close the notification. Fire-and-forget is fine here.
+            if (timerId) {
+                clearInterval(timerId);
+            }
             postMessageToSW({ type: 'CLOSE_WORKOUT_NOTIFICATION' });
         };
     }, [activeWorkoutSession, routine?.name]);
