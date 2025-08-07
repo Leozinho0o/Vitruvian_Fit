@@ -155,13 +155,13 @@ const WorkoutSessionScreen: React.FC = () => {
         routines.find(r => r.id === activeWorkoutSession?.routineId),
     [routines, activeWorkoutSession]);
 
-    const showNotification = useCallback(async (elapsedTime: number, isWorkoutPaused: boolean) => {
+    const showNotification = useCallback(async (isWorkoutPaused: boolean) => {
         if (!('Notification' in window) || Notification.permission !== 'granted' || !routine || !activeWorkoutSession) {
             return;
         }
 
         const title = isWorkoutPaused ? 'Treino Pausado' : 'Treino em Andamento';
-        const body = `Rotina: ${routine.name}\nDuração: ${formatDuration(elapsedTime)}`;
+        const body = `Rotina: ${routine.name}\nToque para ver o progresso.`;
         
         const actions = isWorkoutPaused
             ? [
@@ -186,7 +186,7 @@ const WorkoutSessionScreen: React.FC = () => {
                     workoutSessionId: activeWorkoutSession.id,
                 },
                 actions,
-            });
+            } as any);
         } catch (error) {
             console.error('Error showing notification:', error);
         }
@@ -217,15 +217,13 @@ const WorkoutSessionScreen: React.FC = () => {
             return;
         }
     
-        // Update notification on state change
-        showNotification(elapsedTimeRef.current, isPaused);
+        // Update notification on state change (start, pause, resume)
+        showNotification(isPaused);
 
         if (isPaused) return;
 
         const timerId = setInterval(() => {
             elapsedTimeRef.current += 1;
-            // Update notification every second
-            showNotification(elapsedTimeRef.current, false);
         }, 1000);
     
         return () => {
