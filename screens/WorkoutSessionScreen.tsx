@@ -201,7 +201,7 @@ const WorkoutSessionScreen: React.FC = () => {
         }
     }, [routine, activeWorkoutSession]);
     
-    const closeNotification = async () => {
+    const closeNotification = useCallback(async () => {
         if (!('Notification' in window) || Notification.permission !== 'granted') {
             return;
         }
@@ -212,18 +212,14 @@ const WorkoutSessionScreen: React.FC = () => {
         } catch (error) {
             console.error('Error closing notification:', error);
         }
-    };
+    }, []);
 
+    // Effect for the timer
     useEffect(() => {
-        if (!activeWorkoutSession || activeWorkoutSession.completed) {
+        if (!activeWorkoutSession || activeWorkoutSession.completed || isPaused) {
             return;
         }
-    
-        // Update notification on state change (start, pause, resume)
-        showNotification(isPaused);
-
-        if (isPaused) return;
-
+        
         const timerId = setInterval(() => {
             elapsedTimeRef.current += 1;
         }, 1000);
@@ -231,7 +227,36 @@ const WorkoutSessionScreen: React.FC = () => {
         return () => {
             clearInterval(timerId);
         };
-    }, [activeWorkoutSession, isPaused, showNotification]);
+    }, [activeWorkoutSession, isPaused]);
+
+    // Effect for handling notification visibility
+    useEffect(() => {
+        if (!activeWorkoutSession || activeWorkoutSession.completed) {
+            return;
+        }
+
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'hidden') {
+                showNotification(isPaused);
+            } else {
+                closeNotification();
+            }
+        };
+        
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        // If the component mounts and the page is already hidden, show the notification
+        if (document.visibilityState === 'hidden') {
+            showNotification(isPaused);
+        }
+
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            // Ensure notification is removed when workout screen is unmounted
+            closeNotification();
+        };
+    }, [activeWorkoutSession, isPaused, showNotification, closeNotification]);
+
 
     const handleFinishWorkout = useCallback(() => {
         vibrate([100, 50, 100]);
@@ -283,7 +308,7 @@ const WorkoutSessionScreen: React.FC = () => {
         }
         closeNotification();
         setActiveWorkoutSession(null);
-    }, [activeWorkoutSession, deleteWorkout, logWorkout, loggedExercises, setActiveWorkoutSession, updateWorkout]);
+    }, [activeWorkoutSession, deleteWorkout, logWorkout, loggedExercises, setActiveWorkoutSession, updateWorkout, closeNotification]);
 
     const finishWorkoutRef = useRef(handleFinishWorkout);
     finishWorkoutRef.current = handleFinishWorkout;
