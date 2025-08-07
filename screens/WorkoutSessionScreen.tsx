@@ -84,6 +84,75 @@ const TimerDisplay = ({ initialTime, onEdit, isPaused }: { initialTime: number, 
     );
 };
 
+const NotificationManager = () => {
+    type PermissionStatus = 'default' | 'granted' | 'denied' | 'unsupported';
+    const [permission, setPermission] = useState<PermissionStatus>('default');
+
+    useEffect(() => {
+        if (!('Notification' in window)) {
+            setPermission('unsupported');
+            return;
+        }
+
+        try {
+            navigator.permissions.query({ name: 'notifications' }).then((permissionStatus) => {
+                setPermission(permissionStatus.state as PermissionStatus);
+                permissionStatus.onchange = () => {
+                    setPermission(permissionStatus.state as PermissionStatus);
+                };
+            });
+        } catch (error) {
+            setPermission(Notification.permission as PermissionStatus);
+        }
+    }, []);
+
+    const requestPermission = async () => {
+        const result = await Notification.requestPermission();
+        setPermission(result as PermissionStatus);
+    };
+
+    if (permission === 'unsupported') {
+        return (
+             <div className="bg-gray-100 dark:bg-gray-700 border-l-4 border-gray-500 text-gray-700 dark:text-gray-200 p-4" role="alert">
+                <p className="font-bold">Notificações não suportadas</p>
+                <p>Seu navegador não parece suportar notificações.</p>
+            </div>
+        );
+    }
+
+    if (permission === 'granted') {
+        return (
+            <div className="bg-green-100 dark:bg-green-900/50 border-l-4 border-green-500 text-green-700 dark:text-green-200 p-4" role="alert">
+                <p className="font-bold">Notificações Ativas</p>
+                <p>Elas aparecerão quando o app estiver em segundo plano.</p>
+            </div>
+        );
+    }
+
+    if (permission === 'denied') {
+        return (
+            <div className="bg-red-100 dark:bg-red-900/50 border-l-4 border-red-500 text-red-700 dark:text-red-200 p-4" role="alert">
+                <p className="font-bold">Notificações Bloqueadas</p>
+                <p>Para ativá-las, verifique as permissões do site nas configurações do seu navegador.</p>
+            </div>
+        );
+    }
+    
+    // Default permission state
+    return (
+        <div className="bg-blue-100 dark:bg-blue-900/50 border-l-4 border-blue-500 text-blue-700 dark:text-blue-200 p-4" role="alert">
+             <p className="font-bold">Receba Notificações do Treino</p>
+             <p className="mb-3">Seja avisado sobre o progresso do seu treino quando o app estiver em segundo plano.</p>
+            <button 
+                onClick={requestPermission}
+                className="bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-md flex-shrink-0"
+            >
+                Ativar Notificações
+            </button>
+        </div>
+    );
+};
+
 
 // Add a temporary ID to each logged exercise for stable keys and state updates
 type TempLoggedExercise = LoggedExercise & { tempId: string };
@@ -156,16 +225,7 @@ const WorkoutSessionScreen: React.FC = () => {
     [routines, activeWorkoutSession]);
 
     const showNotification = useCallback(async (isWorkoutPaused: boolean) => {
-        if (!('Notification' in window) || !routine || !activeWorkoutSession) {
-            return;
-        }
-
-        let permission = Notification.permission;
-        if (permission === 'default') {
-            permission = await Notification.requestPermission();
-        }
-    
-        if (permission !== 'granted') {
+        if (!('Notification' in window) || Notification.permission !== 'granted' || !routine || !activeWorkoutSession) {
             return;
         }
 
@@ -587,6 +647,7 @@ const WorkoutSessionScreen: React.FC = () => {
                 </button>
             </header>
             <main className="flex-grow overflow-y-auto p-4 space-y-4">
+                <NotificationManager />
                 {routine.notes && (
                     <div className="bg-light-card dark:bg-dark-card p-3 rounded-lg border-l-4" style={{borderColor: routine.color}}>
                         <h3 className="text-md font-semibold text-light-text dark:text-dark-text mb-1">Anotações da Rotina</h3>
