@@ -1,18 +1,12 @@
-import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp } from '../App';
 import { Exercise, WorkoutSession, LoggedExercise, WorkoutSet, MeasurementType, Unit, PerceivedExertionScale, ExerciseCategory, Evaluation } from '../types';
-import { ChevronLeftIcon, PlusIcon, TrashIcon, XIcon, CheckCircleIcon, ChevronDownIcon, DumbbellIcon, InfoIcon, GripVerticalIcon, SearchIcon, PlayIcon, PauseIcon } from '../components/Icons';
+import { ChevronLeftIcon, PlusIcon, TrashIcon, XIcon, CheckCircleIcon, ChevronDownIcon, DumbbellIcon, InfoIcon, GripVerticalIcon, SearchIcon } from '../components/Icons';
 import { getScaleOptions } from '../constants';
 import ConfirmationModal from '../components/ConfirmationModal';
 import { formatSecondsToMMSS, formatDuration, parseTimeToSeconds, vibrate } from '../utils';
 import ExerciseInfoModal from '../components/ExerciseInfoModal';
 import EffortPicker from '../components/EffortPicker';
-
-const postToSW = (message: any) => {
-    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-        navigator.serviceWorker.controller.postMessage(message);
-    }
-};
 
 // Time Input Component for better UX
 interface TimeInputProps {
@@ -60,103 +54,6 @@ const TimeInput: React.FC<TimeInputProps> = ({ id, valueInSeconds, onChangeInSec
     );
 };
 
-// A new component to isolate the timer's re-rendering.
-const TimerDisplay = ({ initialTime, onEdit, isPaused }: { initialTime: number, onEdit: () => void, isPaused: boolean }) => {
-    const [displayTime, setDisplayTime] = useState(initialTime);
-
-    useEffect(() => {
-        if (isPaused) return;
-
-        const timerId = setInterval(() => {
-            setDisplayTime(prevTime => prevTime + 1);
-        }, 1000);
-
-        return () => clearInterval(timerId);
-    }, [isPaused]); // Re-runs when isPaused changes
-
-    return (
-        <button
-            onClick={onEdit}
-            className="text-xl font-bold text-secondary tabular-nums p-1 rounded-md hover:bg-light-bg dark:hover:bg-dark-bg transition-colors"
-            aria-label="Editar cronômetro"
-        >
-            <div aria-live="polite" className="flex items-center gap-2">
-                {isPaused && <span className="text-red-500 animate-pulse text-sm font-bold">PAUSADO</span>}
-                <span>{formatDuration(displayTime)}</span>
-            </div>
-        </button>
-    );
-};
-
-const NotificationManager = () => {
-    type PermissionStatus = 'default' | 'granted' | 'denied' | 'unsupported';
-    const [permission, setPermission] = useState<PermissionStatus>('default');
-
-    useEffect(() => {
-        if (!('Notification' in window)) {
-            setPermission('unsupported');
-            return;
-        }
-
-        try {
-            navigator.permissions.query({ name: 'notifications' }).then((permissionStatus) => {
-                setPermission(permissionStatus.state as PermissionStatus);
-                permissionStatus.onchange = () => {
-                    setPermission(permissionStatus.state as PermissionStatus);
-                };
-            });
-        } catch (error) {
-            setPermission(Notification.permission as PermissionStatus);
-        }
-    }, []);
-
-    const requestPermission = async () => {
-        const result = await Notification.requestPermission();
-        setPermission(result as PermissionStatus);
-    };
-
-    if (permission === 'unsupported') {
-        return (
-             <div className="bg-gray-100 dark:bg-gray-700 border-l-4 border-gray-500 text-gray-700 dark:text-gray-200 p-4" role="alert">
-                <p className="font-bold">Notificações não suportadas</p>
-                <p>Seu navegador não parece suportar notificações.</p>
-            </div>
-        );
-    }
-
-    if (permission === 'granted') {
-        return (
-            <div className="bg-green-100 dark:bg-green-900/50 border-l-4 border-green-500 text-green-700 dark:text-green-200 p-4" role="alert">
-                <p className="font-bold">Notificações Ativas</p>
-                <p>Elas aparecerão quando o app estiver em segundo plano.</p>
-            </div>
-        );
-    }
-
-    if (permission === 'denied') {
-        return (
-            <div className="bg-red-100 dark:bg-red-900/50 border-l-4 border-red-500 text-red-700 dark:text-red-200 p-4" role="alert">
-                <p className="font-bold">Notificações Bloqueadas</p>
-                <p>Para ativá-las, verifique as permissões do site nas configurações do seu navegador.</p>
-            </div>
-        );
-    }
-    
-    // Default permission state
-    return (
-        <div className="bg-blue-100 dark:bg-blue-900/50 border-l-4 border-blue-500 text-blue-700 dark:text-blue-200 p-4" role="alert">
-             <p className="font-bold">Receba Notificações do Treino</p>
-             <p className="mb-3">Seja avisado sobre o progresso do seu treino quando o app estiver em segundo plano.</p>
-            <button 
-                onClick={requestPermission}
-                className="bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-md flex-shrink-0"
-            >
-                Ativar Notificações
-            </button>
-        </div>
-    );
-};
-
 
 // Add a temporary ID to each logged exercise for stable keys and state updates
 type TempLoggedExercise = LoggedExercise & { tempId: string };
@@ -181,13 +78,35 @@ const WorkoutSessionScreen: React.FC = () => {
         (activeWorkoutSession?.loggedExercises || []).map(ex => ({ ...ex }))
     );
     
-    const elapsedTimeRef = useRef(activeWorkoutSession?.duration || 0);
+    const [now, setNow] = useState(() => Date.now());
     const [isTimerEditModalOpen, setIsTimerEditModalOpen] = useState(false);
-    const [timerDisplayKey, setTimerDisplayKey] = useState(Date.now());
     const [infoExercise, setInfoExercise] = useState<Exercise | null>(null);
     const [draggingId, setDraggingId] = useState<string | null>(null);
-    const [isPaused, setIsPaused] = useState(false);
     
+    const routine = useMemo(() => 
+        routines.find(r => r.id === activeWorkoutSession?.routineId),
+    [routines, activeWorkoutSession]);
+
+    const elapsedTime = useMemo(() => {
+        if (!activeWorkoutSession?.startTime) return 0;
+        const startTimestamp = new Date(activeWorkoutSession.startTime).getTime();
+        return Math.floor((now - startTimestamp) / 1000);
+    }, [now, activeWorkoutSession]);
+
+    useEffect(() => {
+        if (!activeWorkoutSession || activeWorkoutSession.completed) {
+            return;
+        }
+    
+        const timerId = setInterval(() => {
+            setNow(Date.now());
+        }, 1000);
+    
+        return () => {
+            clearInterval(timerId);
+        };
+    }, [activeWorkoutSession]);
+
     // This function creates the initial state for the workout session.
     // It runs only once when the component mounts.
     const [initialLoggedExercises] = useState(() => {
@@ -224,151 +143,6 @@ const WorkoutSessionScreen: React.FC = () => {
     const [isExercisePickerOpen, setIsExercisePickerOpen] = useState(false);
     const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
     
-    const routine = useMemo(() => 
-        routines.find(r => r.id === activeWorkoutSession?.routineId),
-    [routines, activeWorkoutSession]);
-
-    const handleFinishWorkout = useCallback(() => {
-        vibrate([100, 50, 100]);
-        const cleanedLoggedExercises = loggedExercises
-            .map(log => {
-                const { tempId, ...rest } = log; // Remove temporary ID
-                return {
-                    ...rest,
-                    sets: rest.sets.filter(set => Object.values(set).some(v => v != null && v !== false && v !== ''))
-                };
-            })
-            .filter(log => log.sets.length > 0);
-
-        if (!activeWorkoutSession) return;
-
-        const isNewWorkout = activeWorkoutSession.id.startsWith('ws_temp_');
-        const workoutDuration = elapsedTimeRef.current;
-
-        if (cleanedLoggedExercises.length === 0) {
-            if (window.confirm("Nenhum exercício foi registrado. O treino não será salvo. Deseja continuar?")) {
-                if (!isNewWorkout) {
-                    deleteWorkout(activeWorkoutSession.id);
-                }
-                postToSW({ command: 'close' });
-                setActiveWorkoutSession(null);
-            }
-            return;
-        }
-        
-        if (isNewWorkout) {
-            const { id, ...sessionData } = activeWorkoutSession;
-            const finalSession: Omit<WorkoutSession, 'id'> = {
-                ...sessionData,
-                loggedExercises: cleanedLoggedExercises,
-                endTime: new Date().toISOString(),
-                completed: true,
-                duration: workoutDuration,
-            };
-            logWorkout(finalSession);
-        } else {
-            const updatedSession: WorkoutSession = {
-                ...activeWorkoutSession,
-                loggedExercises: cleanedLoggedExercises,
-                endTime: new Date().toISOString(),
-                completed: true,
-                duration: workoutDuration,
-            };
-            updateWorkout(updatedSession);
-        }
-        postToSW({ command: 'close' });
-        setActiveWorkoutSession(null);
-    }, [activeWorkoutSession, deleteWorkout, logWorkout, loggedExercises, setActiveWorkoutSession, updateWorkout]);
-
-    const finishWorkoutRef = useRef(handleFinishWorkout);
-    finishWorkoutRef.current = handleFinishWorkout;
-
-    // Effect for handling service worker messages (from notification clicks)
-    useEffect(() => {
-        const handleMessage = (event: MessageEvent) => {
-            if (!activeWorkoutSession) return;
-            const { type, action, workoutSessionId } = event.data;
-            if (type !== 'workout-notification-action' || workoutSessionId !== activeWorkoutSession.id) {
-                return;
-            }
-    
-            switch (action) {
-                case 'pause':
-                    setIsPaused(true);
-                    break;
-                case 'resume':
-                    setIsPaused(false);
-                    break;
-                case 'finish':
-                    finishWorkoutRef.current();
-                    break;
-            }
-        };
-        
-        navigator.serviceWorker.addEventListener('message', handleMessage);
-    
-        return () => {
-            navigator.serviceWorker.removeEventListener('message', handleMessage);
-        };
-    }, [activeWorkoutSession]);
-
-    // Effect for the timer
-    useEffect(() => {
-        if (!activeWorkoutSession || activeWorkoutSession.completed || isPaused) {
-            return;
-        }
-        
-        const timerId = setInterval(() => {
-            elapsedTimeRef.current += 1;
-        }, 1000);
-    
-        return () => {
-            clearInterval(timerId);
-        };
-    }, [activeWorkoutSession, isPaused]);
-    
-    // Effect for handling notification visibility and state updates
-    useEffect(() => {
-        if (!activeWorkoutSession || activeWorkoutSession.completed || !routine) {
-            return;
-        }
-
-        const postShowMessage = () => {
-            if (Notification.permission === 'granted') {
-                postToSW({
-                    command: 'show',
-                    isPaused,
-                    routineName: routine.name,
-                    workoutSessionId: activeWorkoutSession.id
-                });
-            }
-        };
-
-        const handleVisibilityChange = () => {
-            if (document.visibilityState === 'hidden') {
-                postShowMessage();
-            } else {
-                postToSW({ command: 'close' });
-            }
-        };
-
-        document.addEventListener('visibilitychange', handleVisibilityChange);
-
-        // This part handles two cases:
-        // 1. The component mounts and the page is already hidden.
-        // 2. The `isPaused` state changes while the page is hidden.
-        if (document.visibilityState === 'hidden') {
-            postShowMessage();
-        }
-
-        return () => {
-            document.removeEventListener('visibilitychange', handleVisibilityChange);
-            // Ensure notification is removed when workout screen is unmounted
-            postToSW({ command: 'close' });
-        };
-    }, [activeWorkoutSession, routine, isPaused]);
-
-
     const historicalData = useMemo(() => {
         if (!activeWorkoutSession) return new Map<string, LoggedExercise>();
 
@@ -451,7 +225,7 @@ const WorkoutSessionScreen: React.FC = () => {
                         ...activeWorkoutSession,
                         // clean up tempId before saving to main state
                         loggedExercises: loggedExercises.map(({ tempId, ...rest }) => rest),
-                        duration: elapsedTimeRef.current,
+                        duration: elapsedTime,
                     };
                     setActiveWorkoutSession(currentSessionState);
                     
@@ -581,15 +355,74 @@ const WorkoutSessionScreen: React.FC = () => {
             });
         });
     };
+
+    const handleFinishWorkout = () => {
+        vibrate([100, 50, 100]);
+        const cleanedLoggedExercises = loggedExercises
+            .map(log => {
+                const { tempId, ...rest } = log; // Remove temporary ID
+                return {
+                    ...rest,
+                    sets: rest.sets.filter(set => Object.values(set).some(v => v != null && v !== false && v !== ''))
+                };
+            })
+            .filter(log => log.sets.length > 0);
+
+        const isNewWorkout = activeWorkoutSession.id.startsWith('ws_temp_');
+        const workoutDuration = elapsedTime;
+
+        if (cleanedLoggedExercises.length === 0) {
+            if (window.confirm("Nenhum exercício foi registrado. O treino não será salvo. Deseja continuar?")) {
+                // If it was an existing workout from the calendar, we should delete it.
+                if (!isNewWorkout) {
+                    deleteWorkout(activeWorkoutSession.id);
+                }
+                // If it was a new workout, just closing is enough to discard it.
+                setActiveWorkoutSession(null);
+            }
+            return; // Don't proceed to save
+        }
+        
+        if (isNewWorkout) {
+            const { id, ...sessionData } = activeWorkoutSession;
+            const finalSession: Omit<WorkoutSession, 'id'> = {
+                ...sessionData,
+                loggedExercises: cleanedLoggedExercises,
+                endTime: new Date().toISOString(),
+                completed: true,
+                duration: workoutDuration,
+            };
+            logWorkout(finalSession);
+            setActiveWorkoutSession(null);
+        } else {
+            const updatedSession: WorkoutSession = {
+                ...activeWorkoutSession,
+                loggedExercises: cleanedLoggedExercises,
+                endTime: new Date().toISOString(),
+                completed: true,
+                duration: workoutDuration,
+            };
+            updateWorkout(updatedSession);
+        }
+    };
     
     const handleCancelWorkout = () => {
         setIsCancelConfirmOpen(true);
     };
 
     const confirmAndCancelWorkout = () => {
-        postToSW({ command: 'close' });
         setActiveWorkoutSession(null);
         setIsCancelConfirmOpen(false);
+    };
+
+    const handleEditTimer = (newTimeInSeconds: number) => {
+        if (!activeWorkoutSession) return;
+        const newStartTime = new Date(Date.now() - newTimeInSeconds * 1000);
+        setActiveWorkoutSession({
+            ...activeWorkoutSession,
+            startTime: newStartTime.toISOString(),
+            duration: undefined, // Duration is now baked into the start time.
+        });
     };
 
     return (
@@ -600,19 +433,21 @@ const WorkoutSessionScreen: React.FC = () => {
                 </button>
                 <div className="text-center">
                     <h1 className="text-sm font-semibold text-light-text-secondary dark:text-dark-text-secondary -mb-1 truncate px-2">{routine.name}</h1>
-                    <TimerDisplay
-                        key={timerDisplayKey}
-                        initialTime={elapsedTimeRef.current}
-                        onEdit={() => setIsTimerEditModalOpen(true)}
-                        isPaused={isPaused}
-                    />
+                    <button
+                        onClick={() => setIsTimerEditModalOpen(true)}
+                        className="text-xl font-bold text-secondary tabular-nums p-1 rounded-md hover:bg-light-bg dark:hover:bg-dark-bg transition-colors"
+                        aria-label="Editar cronômetro"
+                    >
+                        <div aria-live="polite">
+                            {formatDuration(elapsedTime)}
+                        </div>
+                    </button>
                 </div>
                 <button onClick={handleCancelWorkout} className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-md text-sm whitespace-nowrap">
                     Cancelar
                 </button>
             </header>
             <main className="flex-grow overflow-y-auto p-4 space-y-4">
-                <NotificationManager />
                 {routine.notes && (
                     <div className="bg-light-card dark:bg-dark-card p-3 rounded-lg border-l-4" style={{borderColor: routine.color}}>
                         <h3 className="text-md font-semibold text-light-text dark:text-dark-text mb-1">Anotações da Rotina</h3>
@@ -851,17 +686,10 @@ const WorkoutSessionScreen: React.FC = () => {
                     Adicionar Exercício
                 </button>
             </main>
-            <footer className="flex-shrink-0 bg-light-card dark:bg-dark-card p-4 border-t border-light-border dark:border-dark-border safe-bottom-padding flex gap-3">
-                 <button
-                    onClick={() => setIsPaused(p => !p)}
-                    className="w-1/3 bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-4 rounded-md flex items-center justify-center text-lg"
-                >
-                    {isPaused ? <PlayIcon className="h-6 w-6 mr-2" /> : <PauseIcon className="h-6 w-6 mr-2" />}
-                    {isPaused ? 'Continuar' : 'Pausar'}
-                </button>
-                <button 
+            <footer className="flex-shrink-0 bg-light-card dark:bg-dark-card p-4 border-t border-light-border dark:border-dark-border safe-bottom-padding">
+                 <button 
                     onClick={handleFinishWorkout} 
-                    className="flex-grow bg-secondary hover:bg-pink-700 text-white font-bold py-3 px-4 rounded-md flex items-center justify-center text-lg"
+                    className="w-full bg-secondary hover:bg-pink-700 text-white font-bold py-3 px-4 rounded-md flex items-center justify-center text-lg"
                 >
                     <CheckCircleIcon className="h-6 w-6 mr-2" />
                     Concluir Treino
@@ -889,11 +717,8 @@ const WorkoutSessionScreen: React.FC = () => {
                 <TimerEditModal
                     isOpen={isTimerEditModalOpen}
                     onClose={() => setIsTimerEditModalOpen(false)}
-                    onSave={(newTime) => {
-                        elapsedTimeRef.current = newTime;
-                        setTimerDisplayKey(Date.now());
-                    }}
-                    initialTime={elapsedTimeRef.current}
+                    onSave={handleEditTimer}
+                    initialTime={elapsedTime}
                 />
             )}
             {infoExercise && (
