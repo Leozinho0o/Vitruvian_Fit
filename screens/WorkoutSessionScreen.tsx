@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useApp } from '../App';
 import { Exercise, WorkoutSession, LoggedExercise, WorkoutSet, MeasurementType, Unit, PerceivedExertionScale, ExerciseCategory, Evaluation } from '../types';
 import { ChevronLeftIcon, PlusIcon, TrashIcon, XIcon, CheckCircleIcon, ChevronDownIcon, DumbbellIcon, InfoIcon, GripVerticalIcon, SearchIcon } from '../components/Icons';
@@ -7,6 +7,8 @@ import ConfirmationModal from '../components/ConfirmationModal';
 import { formatSecondsToMMSS, formatDuration, parseTimeToSeconds, vibrate } from '../utils';
 import ExerciseInfoModal from '../components/ExerciseInfoModal';
 import EffortPicker from '../components/EffortPicker';
+
+const NOTIFICATION_TAG = 'vitruvian-fit-workout';
 
 // Time Input Component for better UX
 interface TimeInputProps {
@@ -55,16 +57,18 @@ const TimeInput: React.FC<TimeInputProps> = ({ id, valueInSeconds, onChangeInSec
 };
 
 // A new component to isolate the timer's re-rendering.
-// It keeps its own state for display purposes.
-const TimerDisplay = ({ initialTime, onEdit }: { initialTime: number, onEdit: () => void }) => {
+const TimerDisplay = ({ initialTime, onEdit, isPaused }: { initialTime: number, onEdit: () => void, isPaused: boolean }) => {
     const [displayTime, setDisplayTime] = useState(initialTime);
 
     useEffect(() => {
+        if (isPaused) return;
+
         const timerId = setInterval(() => {
             setDisplayTime(prevTime => prevTime + 1);
         }, 1000);
+
         return () => clearInterval(timerId);
-    }, []); // Runs once on mount
+    }, [isPaused]); // Re-runs when isPaused changes
 
     return (
         <button
@@ -72,8 +76,9 @@ const TimerDisplay = ({ initialTime, onEdit }: { initialTime: number, onEdit: ()
             className="text-xl font-bold text-secondary tabular-nums p-1 rounded-md hover:bg-light-bg dark:hover:bg-dark-bg transition-colors"
             aria-label="Editar cronômetro"
         >
-            <div aria-live="polite">
-                {formatDuration(displayTime)}
+            <div aria-live="polite" className="flex items-center gap-2">
+                {isPaused && <span className="text-red-500 animate-pulse text-sm font-bold">PAUSADO</span>}
+                <span>{formatDuration(displayTime)}</span>
             </div>
         </button>
     );
@@ -82,13 +87,6 @@ const TimerDisplay = ({ initialTime, onEdit }: { initialTime: number, onEdit: ()
 
 // Add a temporary ID to each logged exercise for stable keys and state updates
 type TempLoggedExercise = LoggedExercise & { tempId: string };
-
-// Helper function to post messages to the service worker
-const postMessageToSW = (message: any) => {
-    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-        navigator.serviceWorker.controller.postMessage(message);
-    }
-};
 
 const WorkoutSessionScreen: React.FC = () => {
     const { 
@@ -115,54 +113,8 @@ const WorkoutSessionScreen: React.FC = () => {
     const [timerDisplayKey, setTimerDisplayKey] = useState(Date.now());
     const [infoExercise, setInfoExercise] = useState<Exercise | null>(null);
     const [draggingId, setDraggingId] = useState<string | null>(null);
+    const [isPaused, setIsPaused] = useState(false);
     
-    const routine = useMemo(() => 
-        routines.find(r => r.id === activeWorkoutSession?.routineId),
-    [routines, activeWorkoutSession]);
-
-    useEffect(() => {
-        if (!activeWorkoutSession || activeWorkoutSession.completed) {
-            postMessageToSW({ type: 'CLOSE_WORKOUT_NOTIFICATION' });
-            return;
-        }
-    
-        const showOrUpdateNotification = (time: number) => {
-            // Check for permission inside the function that shows the notification
-            if ('Notification' in window && Notification.permission === 'granted') {
-                const title = `Treino em andamento: ${routine?.name || 'Sessão de Treino'}`;
-                const body = `Duração: ${formatDuration(time)}`;
-                postMessageToSW({
-                    type: 'SHOW_WORKOUT_NOTIFICATION',
-                    payload: { title, body }
-                });
-            }
-        };
-    
-        const setupAndRunNotifications = async () => {
-            if ('Notification' in window && Notification.permission === 'default') {
-                // Await the permission request
-                await Notification.requestPermission();
-            }
-            // Now that we have awaited, we can check the permission and show the initial notification
-            showOrUpdateNotification(elapsedTimeRef.current);
-        };
-    
-        setupAndRunNotifications();
-    
-        const timerId = setInterval(() => {
-            const newTime = elapsedTimeRef.current + 1;
-            elapsedTimeRef.current = newTime;
-            // Update notification every second to show a live timer.
-            showOrUpdateNotification(newTime);
-        }, 1000);
-    
-        return () => {
-            clearInterval(timerId);
-            // On unmount (cancel/finish), close the notification
-            postMessageToSW({ type: 'CLOSE_WORKOUT_NOTIFICATION' });
-        };
-    }, [activeWorkoutSession, routine?.name]);
-
     // This function creates the initial state for the workout session.
     // It runs only once when the component mounts.
     const [initialLoggedExercises] = useState(() => {
@@ -199,6 +151,174 @@ const WorkoutSessionScreen: React.FC = () => {
     const [isExercisePickerOpen, setIsExercisePickerOpen] = useState(false);
     const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
     
+    const routine = useMemo(() => 
+        routines.find(r => r.id === activeWorkoutSession?.routineId),
+    [routines, activeWorkoutSession]);
+
+    const showNotification = useCallback(async (elapsedTime: number, isWorkoutPaused: boolean) => {
+        if (!('Notification' in window) || Notification.permission !== 'granted' || !routine || !activeWorkoutSession) {
+            return;
+        }
+
+        const title = isWorkoutPaused ? 'Treino Pausado' : 'Treino em Andamento';
+        const body = `Rotina: ${routine.name}\nDuração: ${formatDuration(elapsedTime)}`;
+        
+        const actions = isWorkoutPaused
+            ? [
+                { action: 'resume', title: 'Continuar' },
+                { action: 'finish', title: 'Concluir' }
+            ]
+            : [
+                { action: 'pause', title: 'Pausar' },
+                { action: 'finish', title: 'Concluir' }
+            ];
+
+        try {
+            const registration = await navigator.serviceWorker.ready;
+            await registration.showNotification(title, {
+                body,
+                tag: NOTIFICATION_TAG,
+                icon: '/assets/icon-192x192.png',
+                badge: '/assets/icon-192x192.png',
+                silent: true,
+                requireInteraction: true,
+                data: {
+                    workoutSessionId: activeWorkoutSession.id,
+                },
+                actions,
+            });
+        } catch (error) {
+            console.error('Error showing notification:', error);
+        }
+    }, [routine, activeWorkoutSession]);
+    
+    const closeNotification = async () => {
+        if (!('Notification' in window) || Notification.permission !== 'granted') {
+            return;
+        }
+        try {
+            const registration = await navigator.serviceWorker.ready;
+            const notifications = await registration.getNotifications({ tag: NOTIFICATION_TAG });
+            notifications.forEach(notification => notification.close());
+        } catch (error) {
+            console.error('Error closing notification:', error);
+        }
+    };
+
+    useEffect(() => {
+        // Request permission on mount
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+    }, []);
+    
+    useEffect(() => {
+        if (!activeWorkoutSession || activeWorkoutSession.completed) {
+            return;
+        }
+    
+        // Update notification on state change
+        showNotification(elapsedTimeRef.current, isPaused);
+
+        if (isPaused) return;
+
+        const timerId = setInterval(() => {
+            elapsedTimeRef.current += 1;
+            // Update notification every second
+            showNotification(elapsedTimeRef.current, false);
+        }, 1000);
+    
+        return () => {
+            clearInterval(timerId);
+        };
+    }, [activeWorkoutSession, isPaused, showNotification]);
+
+    const handleFinishWorkout = useCallback(() => {
+        vibrate([100, 50, 100]);
+        const cleanedLoggedExercises = loggedExercises
+            .map(log => {
+                const { tempId, ...rest } = log; // Remove temporary ID
+                return {
+                    ...rest,
+                    sets: rest.sets.filter(set => Object.values(set).some(v => v != null && v !== false && v !== ''))
+                };
+            })
+            .filter(log => log.sets.length > 0);
+
+        if (!activeWorkoutSession) return;
+
+        const isNewWorkout = activeWorkoutSession.id.startsWith('ws_temp_');
+        const workoutDuration = elapsedTimeRef.current;
+
+        if (cleanedLoggedExercises.length === 0) {
+            if (window.confirm("Nenhum exercício foi registrado. O treino não será salvo. Deseja continuar?")) {
+                if (!isNewWorkout) {
+                    deleteWorkout(activeWorkoutSession.id);
+                }
+                closeNotification();
+                setActiveWorkoutSession(null);
+            }
+            return;
+        }
+        
+        if (isNewWorkout) {
+            const { id, ...sessionData } = activeWorkoutSession;
+            const finalSession: Omit<WorkoutSession, 'id'> = {
+                ...sessionData,
+                loggedExercises: cleanedLoggedExercises,
+                endTime: new Date().toISOString(),
+                completed: true,
+                duration: workoutDuration,
+            };
+            logWorkout(finalSession);
+        } else {
+            const updatedSession: WorkoutSession = {
+                ...activeWorkoutSession,
+                loggedExercises: cleanedLoggedExercises,
+                endTime: new Date().toISOString(),
+                completed: true,
+                duration: workoutDuration,
+            };
+            updateWorkout(updatedSession);
+        }
+        closeNotification();
+        setActiveWorkoutSession(null);
+    }, [activeWorkoutSession, deleteWorkout, logWorkout, loggedExercises, setActiveWorkoutSession, updateWorkout]);
+
+    const finishWorkoutRef = useRef(handleFinishWorkout);
+    finishWorkoutRef.current = handleFinishWorkout;
+
+    useEffect(() => {
+        const handleMessage = (event: MessageEvent) => {
+            if (!activeWorkoutSession) return;
+            const { type, action, workoutSessionId } = event.data;
+            if (type !== 'workout-notification-action' || workoutSessionId !== activeWorkoutSession.id) {
+                return;
+            }
+    
+            switch (action) {
+                case 'pause':
+                    setIsPaused(true);
+                    break;
+                case 'resume':
+                    setIsPaused(false);
+                    break;
+                case 'finish':
+                    finishWorkoutRef.current();
+                    break;
+                default:
+                    window.focus();
+                    break;
+            }
+        };
+        
+        navigator.serviceWorker.addEventListener('message', handleMessage);
+    
+        return () => {
+            navigator.serviceWorker.removeEventListener('message', handleMessage);
+        };
+    }, [activeWorkoutSession]);
+
     const historicalData = useMemo(() => {
         if (!activeWorkoutSession) return new Map<string, LoggedExercise>();
 
@@ -411,62 +531,13 @@ const WorkoutSessionScreen: React.FC = () => {
             });
         });
     };
-
-    const handleFinishWorkout = () => {
-        vibrate([100, 50, 100]);
-        const cleanedLoggedExercises = loggedExercises
-            .map(log => {
-                const { tempId, ...rest } = log; // Remove temporary ID
-                return {
-                    ...rest,
-                    sets: rest.sets.filter(set => Object.values(set).some(v => v != null && v !== false && v !== ''))
-                };
-            })
-            .filter(log => log.sets.length > 0);
-
-        const isNewWorkout = activeWorkoutSession.id.startsWith('ws_temp_');
-        const workoutDuration = elapsedTimeRef.current;
-
-        if (cleanedLoggedExercises.length === 0) {
-            if (window.confirm("Nenhum exercício foi registrado. O treino não será salvo. Deseja continuar?")) {
-                // If it was an existing workout from the calendar, we should delete it.
-                if (!isNewWorkout) {
-                    deleteWorkout(activeWorkoutSession.id);
-                }
-                // If it was a new workout, just closing is enough to discard it.
-                setActiveWorkoutSession(null);
-            }
-            return; // Don't proceed to save
-        }
-        
-        if (isNewWorkout) {
-            const { id, ...sessionData } = activeWorkoutSession;
-            const finalSession: Omit<WorkoutSession, 'id'> = {
-                ...sessionData,
-                loggedExercises: cleanedLoggedExercises,
-                endTime: new Date().toISOString(),
-                completed: true,
-                duration: workoutDuration,
-            };
-            logWorkout(finalSession);
-            setActiveWorkoutSession(null);
-        } else {
-            const updatedSession: WorkoutSession = {
-                ...activeWorkoutSession,
-                loggedExercises: cleanedLoggedExercises,
-                endTime: new Date().toISOString(),
-                completed: true,
-                duration: workoutDuration,
-            };
-            updateWorkout(updatedSession);
-        }
-    };
     
     const handleCancelWorkout = () => {
         setIsCancelConfirmOpen(true);
     };
 
     const confirmAndCancelWorkout = () => {
+        closeNotification();
         setActiveWorkoutSession(null);
         setIsCancelConfirmOpen(false);
     };
@@ -483,6 +554,7 @@ const WorkoutSessionScreen: React.FC = () => {
                         key={timerDisplayKey}
                         initialTime={elapsedTimeRef.current}
                         onEdit={() => setIsTimerEditModalOpen(true)}
+                        isPaused={isPaused}
                     />
                 </div>
                 <button onClick={handleCancelWorkout} className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-md text-sm whitespace-nowrap">

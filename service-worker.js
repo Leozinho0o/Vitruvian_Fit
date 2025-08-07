@@ -1,5 +1,4 @@
 const CACHE_NAME = 'vitruvian-fit-cache-v1';
-const NOTIFICATION_TAG = 'vitruvian-fit-workout';
 
 // On install, cache the app shell and other critical assets.
 // This makes the app load faster on subsequent visits and work offline.
@@ -67,49 +66,33 @@ self.addEventListener('fetch', (event) => {
     );
 });
 
-// Listen for messages from the client to show/update/close notifications.
-self.addEventListener('message', (event) => {
-    if (event.data && event.data.type === 'SHOW_WORKOUT_NOTIFICATION') {
-        const { title, body } = event.data.payload;
-        const options = {
-            body: body,
-            icon: '/assets/icon-192x192.png',
-            badge: '/assets/icon-192x192.png',
-            tag: NOTIFICATION_TAG,
-            renotify: false, // Don't make a sound/vibration on update
-            silent: true,
-            requireInteraction: true, // Make it persistent until dismissed or closed
-        };
-        event.waitUntil(self.registration.showNotification(title, options));
-    } else if (event.data && event.data.type === 'CLOSE_WORKOUT_NOTIFICATION') {
-        event.waitUntil(
-            self.registration.getNotifications({ tag: NOTIFICATION_TAG })
-                .then(notifications => {
-                    notifications.forEach(notification => notification.close());
-                })
-        );
-    }
-});
 
-// Handle notification click events.
+// Listen for notification clicks
 self.addEventListener('notificationclick', (event) => {
-    event.notification.close();
+    const workoutSessionId = event.notification.data?.workoutSessionId;
 
-    // This looks for an open tab with the same origin and focuses it.
-    event.waitUntil(
-        self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-            if (clientList.length > 0) {
-                let client = clientList[0];
-                // Find a focused client or fall back to the first one.
-                for (let i = 0; i < clientList.length; i++) {
-                    if (clientList[i].focused) {
-                        client = clientList[i];
-                    }
-                }
-                return client.focus();
-            }
-            // If no tab is open, open a new one.
-            return self.clients.openWindow('/');
-        })
-    );
+    // Always close the notification on click to ensure it's re-shown with correct state
+    event.notification.close();
+    
+    // We need to do something, so we'll try to message the client.
+    // If no client is open, we can open a new one.
+    const promise = clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+        let clientFound = false;
+        if (windowClients.length > 0) {
+            windowClients.forEach(client => {
+                client.postMessage({
+                    type: 'workout-notification-action',
+                    action: event.action, // 'pause', 'resume', 'finish', or ''
+                    workoutSessionId: workoutSessionId
+                });
+                client.focus(); // Focus the client window
+                clientFound = true;
+            });
+        }
+        if (!clientFound) {
+            clients.openWindow('/');
+        }
+    });
+
+    event.waitUntil(promise);
 });
