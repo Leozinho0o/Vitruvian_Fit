@@ -60,8 +60,16 @@ type TempLoggedExercise = LoggedExercise & { tempId: string };
 
 // Helper function to post messages to the service worker
 const postMessageToSW = (message: any) => {
-    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-        navigator.serviceWorker.controller.postMessage(message);
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.ready.then((registration) => {
+            // Don't post a message if there's no active SW.
+            if (!registration.active) {
+                return;
+            }
+            registration.active.postMessage(message);
+        }).catch(error => {
+            console.error('Service Worker not ready:', error);
+        });
     }
 };
 
@@ -127,10 +135,8 @@ const WorkoutSessionScreen: React.FC = () => {
         const timerId = setInterval(() => {
             setElapsedTime(prevTime => {
                 const newTime = prevTime + 1;
-                // Update notification every 15 seconds to avoid being too spammy
-                if (newTime > 0 && newTime % 15 === 0) {
-                    showOrUpdateNotification(newTime);
-                }
+                // Update notification every second to keep the timer accurate
+                showOrUpdateNotification(newTime);
                 return newTime;
             });
         }, 1000);
