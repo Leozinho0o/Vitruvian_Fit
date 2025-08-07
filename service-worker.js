@@ -1,25 +1,63 @@
 const CACHE_NAME = 'vitruvian-fit-cache-v1';
+const NOTIFICATION_TAG = 'vitruvian-fit-workout';
 
-// On install, cache the app shell and other critical assets.
-// This makes the app load faster on subsequent visits and work offline.
+// This will hold the current state of the workout notification
+let notificationState = {
+  sessionId: null,
+  routineName: 'Treino',
+  isPaused: false,
+};
+
+// --- Helper Functions ---
+
+const showWorkoutNotification = async () => {
+    if (!notificationState.sessionId) return;
+
+    const title = notificationState.isPaused ? 'Treino Pausado' : 'Treino em Andamento';
+    const body = `Rotina: ${notificationState.routineName}\nToque para ver o progresso.`;
+    
+    const actions = notificationState.isPaused
+        ? [ { action: 'resume', title: 'Continuar' }, { action: 'finish', title: 'Concluir' } ]
+        : [ { action: 'pause', title: 'Pausar' }, { action: 'finish', title: 'Concluir' } ];
+
+    const options = {
+        body,
+        tag: NOTIFICATION_TAG,
+        icon: '/assets/icon-192x192.png',
+        badge: '/assets/icon-192x192.png', // For Android
+        silent: true,
+        requireInteraction: true,
+        data: {
+            workoutSessionId: notificationState.sessionId,
+        },
+        actions,
+    };
+
+    try {
+        await self.registration.showNotification(title, options);
+    } catch (error) {
+        console.error('Error showing notification:', error);
+    }
+};
+
+const closeWorkoutNotification = async () => {
+    const notifications = await self.registration.getNotifications({ tag: NOTIFICATION_TAG });
+    notifications.forEach(notification => notification.close());
+    notificationState.sessionId = null; // Clear state when closing
+};
+
+
+// --- Event Listeners ---
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       console.log('Service Worker: Caching App Shell');
-      // We pre-cache the main entry points. The rest of the app will be cached on first visit.
-      return cache.addAll([
-          '/',
-          '/index.html',
-          '/manifest.json'
-      ]);
-    }).then(() => {
-        // Force the waiting service worker to become the active service worker.
-        return self.skipWaiting();
-    })
+      return cache.addAll(['/', '/index.html', '/manifest.json']);
+    }).then(() => self.skipWaiting())
   );
 });
 
-// On activate, clean up old caches.
 self.addEventListener('activate', (event) => {
   const cacheWhitelist = [CACHE_NAME];
   event.waitUntil(
@@ -32,67 +70,73 @@ self.addEventListener('activate', (event) => {
           }
         })
       );
-    }).then(() => {
-        // Tell the active service worker to take control of the page immediately.
-        return self.clients.claim();
-    })
+    }).then(() => self.clients.claim())
   );
 });
 
-// On fetch, use a cache-first strategy.
 self.addEventListener('fetch', (event) => {
-    // We only want to cache GET requests.
     if (event.request.method !== 'GET') {
         return;
     }
-    
     event.respondWith(
         caches.open(CACHE_NAME).then((cache) => {
             return cache.match(event.request).then((response) => {
-                // If a cached response is found, return it.
-                // Otherwise, fetch from the network.
                 const fetchPromise = fetch(event.request).then((networkResponse) => {
-                    // If the fetch is successful, cache the new response.
-                    // We check for valid responses to avoid caching errors or opaque responses from cross-origin requests if not desired.
                     if (networkResponse && networkResponse.status === 200) {
                         cache.put(event.request, networkResponse.clone());
                     }
                     return networkResponse;
                 });
-
                 return response || fetchPromise;
             });
         })
     );
 });
 
+// Listen for messages from the client (main app)
+self.addEventListener('message', (event) => {
+    const { command, workoutSessionId, routineName, isPaused } = event.data;
 
-// Listen for notification clicks
+    if (command === 'show') {
+        notificationState = { sessionId: workoutSessionId, routineName, isPaused };
+        event.waitUntil(showWorkoutNotification());
+    } else if (command === 'close') {
+        event.waitUntil(closeWorkoutNotification());
+    }
+});
+
+// Listen for notification clicks and actions
 self.addEventListener('notificationclick', (event) => {
-    const workoutSessionId = event.notification.data?.workoutSessionId;
+    const { workoutSessionId } = event.notification.data || {};
+    const { action } = event;
 
-    // Always close the notification on click to ensure it's re-shown with correct state
     event.notification.close();
-    
-    // We need to do something, so we'll try to message the client.
-    // If no client is open, we can open a new one.
-    const promise = clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-        let clientFound = false;
-        if (windowClients.length > 0) {
-            windowClients.forEach(client => {
+
+    const updateAndShowPromise = (async () => {
+        if (action === 'pause') {
+            notificationState.isPaused = true;
+            await showWorkoutNotification();
+        } else if (action === 'resume') {
+            notificationState.isPaused = false;
+            await showWorkoutNotification();
+        }
+    })();
+
+    const messageClientPromise = clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+        for (const client of windowClients) {
+            if (client.url.endsWith('/') && 'focus' in client) {
                 client.postMessage({
                     type: 'workout-notification-action',
-                    action: event.action, // 'pause', 'resume', 'finish', or ''
+                    action: action,
                     workoutSessionId: workoutSessionId
                 });
-                client.focus(); // Focus the client window
-                clientFound = true;
-            });
+                return client.focus();
+            }
         }
-        if (!clientFound) {
-            clients.openWindow('/');
+        if (clients.openWindow) {
+            return clients.openWindow('/');
         }
     });
 
-    event.waitUntil(promise);
+    event.waitUntil(Promise.all([updateAndShowPromise, messageClientPromise]));
 });

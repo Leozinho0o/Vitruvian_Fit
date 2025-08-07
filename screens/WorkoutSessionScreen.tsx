@@ -1,14 +1,18 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useApp } from '../App';
 import { Exercise, WorkoutSession, LoggedExercise, WorkoutSet, MeasurementType, Unit, PerceivedExertionScale, ExerciseCategory, Evaluation } from '../types';
-import { ChevronLeftIcon, PlusIcon, TrashIcon, XIcon, CheckCircleIcon, ChevronDownIcon, DumbbellIcon, InfoIcon, GripVerticalIcon, SearchIcon } from '../components/Icons';
+import { ChevronLeftIcon, PlusIcon, TrashIcon, XIcon, CheckCircleIcon, ChevronDownIcon, DumbbellIcon, InfoIcon, GripVerticalIcon, SearchIcon, PlayIcon, PauseIcon } from '../components/Icons';
 import { getScaleOptions } from '../constants';
 import ConfirmationModal from '../components/ConfirmationModal';
 import { formatSecondsToMMSS, formatDuration, parseTimeToSeconds, vibrate } from '../utils';
 import ExerciseInfoModal from '../components/ExerciseInfoModal';
 import EffortPicker from '../components/EffortPicker';
 
-const NOTIFICATION_TAG = 'vitruvian-fit-workout';
+const postToSW = (message: any) => {
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage(message);
+    }
+};
 
 // Time Input Component for better UX
 interface TimeInputProps {
@@ -224,100 +228,6 @@ const WorkoutSessionScreen: React.FC = () => {
         routines.find(r => r.id === activeWorkoutSession?.routineId),
     [routines, activeWorkoutSession]);
 
-    const showNotification = useCallback(async (isWorkoutPaused: boolean) => {
-        if (!('Notification' in window) || Notification.permission !== 'granted' || !routine || !activeWorkoutSession) {
-            return;
-        }
-
-        const title = isWorkoutPaused ? 'Treino Pausado' : 'Treino em Andamento';
-        const body = `Rotina: ${routine.name}\nToque para ver o progresso.`;
-        
-        const actions = isWorkoutPaused
-            ? [
-                { action: 'resume', title: 'Continuar' },
-                { action: 'finish', title: 'Concluir' }
-            ]
-            : [
-                { action: 'pause', title: 'Pausar' },
-                { action: 'finish', title: 'Concluir' }
-            ];
-
-        try {
-            const registration = await navigator.serviceWorker.ready;
-            await registration.showNotification(title, {
-                body,
-                tag: NOTIFICATION_TAG,
-                icon: '/assets/icon-192x192.png',
-                badge: '/assets/icon-192x192.png',
-                silent: true,
-                requireInteraction: true,
-                data: {
-                    workoutSessionId: activeWorkoutSession.id,
-                },
-                actions,
-            } as any);
-        } catch (error) {
-            console.error('Error showing notification:', error);
-        }
-    }, [routine, activeWorkoutSession]);
-    
-    const closeNotification = useCallback(async () => {
-        if (!('Notification' in window) || Notification.permission !== 'granted') {
-            return;
-        }
-        try {
-            const registration = await navigator.serviceWorker.ready;
-            const notifications = await registration.getNotifications({ tag: NOTIFICATION_TAG });
-            notifications.forEach(notification => notification.close());
-        } catch (error) {
-            console.error('Error closing notification:', error);
-        }
-    }, []);
-
-    // Effect for the timer
-    useEffect(() => {
-        if (!activeWorkoutSession || activeWorkoutSession.completed || isPaused) {
-            return;
-        }
-        
-        const timerId = setInterval(() => {
-            elapsedTimeRef.current += 1;
-        }, 1000);
-    
-        return () => {
-            clearInterval(timerId);
-        };
-    }, [activeWorkoutSession, isPaused]);
-
-    // Effect for handling notification visibility
-    useEffect(() => {
-        if (!activeWorkoutSession || activeWorkoutSession.completed) {
-            return;
-        }
-
-        const handleVisibilityChange = () => {
-            if (document.visibilityState === 'hidden') {
-                showNotification(isPaused);
-            } else {
-                closeNotification();
-            }
-        };
-        
-        document.addEventListener('visibilitychange', handleVisibilityChange);
-
-        // If the component mounts and the page is already hidden, show the notification
-        if (document.visibilityState === 'hidden') {
-            showNotification(isPaused);
-        }
-
-        return () => {
-            document.removeEventListener('visibilitychange', handleVisibilityChange);
-            // Ensure notification is removed when workout screen is unmounted
-            closeNotification();
-        };
-    }, [activeWorkoutSession, isPaused, showNotification, closeNotification]);
-
-
     const handleFinishWorkout = useCallback(() => {
         vibrate([100, 50, 100]);
         const cleanedLoggedExercises = loggedExercises
@@ -340,7 +250,7 @@ const WorkoutSessionScreen: React.FC = () => {
                 if (!isNewWorkout) {
                     deleteWorkout(activeWorkoutSession.id);
                 }
-                closeNotification();
+                postToSW({ command: 'close' });
                 setActiveWorkoutSession(null);
             }
             return;
@@ -366,13 +276,14 @@ const WorkoutSessionScreen: React.FC = () => {
             };
             updateWorkout(updatedSession);
         }
-        closeNotification();
+        postToSW({ command: 'close' });
         setActiveWorkoutSession(null);
-    }, [activeWorkoutSession, deleteWorkout, logWorkout, loggedExercises, setActiveWorkoutSession, updateWorkout, closeNotification]);
+    }, [activeWorkoutSession, deleteWorkout, logWorkout, loggedExercises, setActiveWorkoutSession, updateWorkout]);
 
     const finishWorkoutRef = useRef(handleFinishWorkout);
     finishWorkoutRef.current = handleFinishWorkout;
 
+    // Effect for handling service worker messages (from notification clicks)
     useEffect(() => {
         const handleMessage = (event: MessageEvent) => {
             if (!activeWorkoutSession) return;
@@ -391,9 +302,6 @@ const WorkoutSessionScreen: React.FC = () => {
                 case 'finish':
                     finishWorkoutRef.current();
                     break;
-                default:
-                    window.focus();
-                    break;
             }
         };
         
@@ -403,6 +311,63 @@ const WorkoutSessionScreen: React.FC = () => {
             navigator.serviceWorker.removeEventListener('message', handleMessage);
         };
     }, [activeWorkoutSession]);
+
+    // Effect for the timer
+    useEffect(() => {
+        if (!activeWorkoutSession || activeWorkoutSession.completed || isPaused) {
+            return;
+        }
+        
+        const timerId = setInterval(() => {
+            elapsedTimeRef.current += 1;
+        }, 1000);
+    
+        return () => {
+            clearInterval(timerId);
+        };
+    }, [activeWorkoutSession, isPaused]);
+    
+    // Effect for handling notification visibility and state updates
+    useEffect(() => {
+        if (!activeWorkoutSession || activeWorkoutSession.completed || !routine) {
+            return;
+        }
+
+        const postShowMessage = () => {
+            if (Notification.permission === 'granted') {
+                postToSW({
+                    command: 'show',
+                    isPaused,
+                    routineName: routine.name,
+                    workoutSessionId: activeWorkoutSession.id
+                });
+            }
+        };
+
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'hidden') {
+                postShowMessage();
+            } else {
+                postToSW({ command: 'close' });
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        // This part handles two cases:
+        // 1. The component mounts and the page is already hidden.
+        // 2. The `isPaused` state changes while the page is hidden.
+        if (document.visibilityState === 'hidden') {
+            postShowMessage();
+        }
+
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            // Ensure notification is removed when workout screen is unmounted
+            postToSW({ command: 'close' });
+        };
+    }, [activeWorkoutSession, routine, isPaused]);
+
 
     const historicalData = useMemo(() => {
         if (!activeWorkoutSession) return new Map<string, LoggedExercise>();
@@ -622,7 +587,7 @@ const WorkoutSessionScreen: React.FC = () => {
     };
 
     const confirmAndCancelWorkout = () => {
-        closeNotification();
+        postToSW({ command: 'close' });
         setActiveWorkoutSession(null);
         setIsCancelConfirmOpen(false);
     };
@@ -886,10 +851,17 @@ const WorkoutSessionScreen: React.FC = () => {
                     Adicionar Exercício
                 </button>
             </main>
-            <footer className="flex-shrink-0 bg-light-card dark:bg-dark-card p-4 border-t border-light-border dark:border-dark-border safe-bottom-padding">
-                 <button 
+            <footer className="flex-shrink-0 bg-light-card dark:bg-dark-card p-4 border-t border-light-border dark:border-dark-border safe-bottom-padding flex gap-3">
+                 <button
+                    onClick={() => setIsPaused(p => !p)}
+                    className="w-1/3 bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-4 rounded-md flex items-center justify-center text-lg"
+                >
+                    {isPaused ? <PlayIcon className="h-6 w-6 mr-2" /> : <PauseIcon className="h-6 w-6 mr-2" />}
+                    {isPaused ? 'Continuar' : 'Pausar'}
+                </button>
+                <button 
                     onClick={handleFinishWorkout} 
-                    className="w-full bg-secondary hover:bg-pink-700 text-white font-bold py-3 px-4 rounded-md flex items-center justify-center text-lg"
+                    className="flex-grow bg-secondary hover:bg-pink-700 text-white font-bold py-3 px-4 rounded-md flex items-center justify-center text-lg"
                 >
                     <CheckCircleIcon className="h-6 w-6 mr-2" />
                     Concluir Treino
