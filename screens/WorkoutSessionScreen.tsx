@@ -54,22 +54,39 @@ const TimeInput: React.FC<TimeInputProps> = ({ id, valueInSeconds, onChangeInSec
     );
 };
 
+// A new component to isolate the timer's re-rendering.
+// It keeps its own state for display purposes.
+const TimerDisplay = ({ initialTime, onEdit }: { initialTime: number, onEdit: () => void }) => {
+    const [displayTime, setDisplayTime] = useState(initialTime);
+
+    useEffect(() => {
+        const timerId = setInterval(() => {
+            setDisplayTime(prevTime => prevTime + 1);
+        }, 1000);
+        return () => clearInterval(timerId);
+    }, []); // Runs once on mount
+
+    return (
+        <button
+            onClick={onEdit}
+            className="text-xl font-bold text-secondary tabular-nums p-1 rounded-md hover:bg-light-bg dark:hover:bg-dark-bg transition-colors"
+            aria-label="Editar cronômetro"
+        >
+            <div aria-live="polite">
+                {formatDuration(displayTime)}
+            </div>
+        </button>
+    );
+};
+
 
 // Add a temporary ID to each logged exercise for stable keys and state updates
 type TempLoggedExercise = LoggedExercise & { tempId: string };
 
 // Helper function to post messages to the service worker
 const postMessageToSW = (message: any) => {
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.ready.then((registration) => {
-            // Don't post a message if there's no active SW.
-            if (!registration.active) {
-                return;
-            }
-            registration.active.postMessage(message);
-        }).catch(error => {
-            console.error('Service Worker not ready:', error);
-        });
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage(message);
     }
 };
 
@@ -93,8 +110,9 @@ const WorkoutSessionScreen: React.FC = () => {
         (activeWorkoutSession?.loggedExercises || []).map(ex => ({ ...ex }))
     );
     
-    const [elapsedTime, setElapsedTime] = useState(activeWorkoutSession?.duration || 0);
+    const elapsedTimeRef = useRef(activeWorkoutSession?.duration || 0);
     const [isTimerEditModalOpen, setIsTimerEditModalOpen] = useState(false);
+    const [timerDisplayKey, setTimerDisplayKey] = useState(Date.now());
     const [infoExercise, setInfoExercise] = useState<Exercise | null>(null);
     const [draggingId, setDraggingId] = useState<string | null>(null);
     
@@ -126,19 +144,16 @@ const WorkoutSessionScreen: React.FC = () => {
                 await Notification.requestPermission();
             }
             // Now that we have awaited, we can check the permission and show the initial notification
-            showOrUpdateNotification(elapsedTime);
+            showOrUpdateNotification(elapsedTimeRef.current);
         };
     
-        // Run the async setup
         setupAndRunNotifications();
     
         const timerId = setInterval(() => {
-            setElapsedTime(prevTime => {
-                const newTime = prevTime + 1;
-                // Update notification every second to keep the timer accurate
-                showOrUpdateNotification(newTime);
-                return newTime;
-            });
+            const newTime = elapsedTimeRef.current + 1;
+            elapsedTimeRef.current = newTime;
+            // Update notification every second to show a live timer.
+            showOrUpdateNotification(newTime);
         }, 1000);
     
         return () => {
@@ -266,7 +281,7 @@ const WorkoutSessionScreen: React.FC = () => {
                         ...activeWorkoutSession,
                         // clean up tempId before saving to main state
                         loggedExercises: loggedExercises.map(({ tempId, ...rest }) => rest),
-                        duration: elapsedTime,
+                        duration: elapsedTimeRef.current,
                     };
                     setActiveWorkoutSession(currentSessionState);
                     
@@ -410,7 +425,7 @@ const WorkoutSessionScreen: React.FC = () => {
             .filter(log => log.sets.length > 0);
 
         const isNewWorkout = activeWorkoutSession.id.startsWith('ws_temp_');
-        const workoutDuration = elapsedTime;
+        const workoutDuration = elapsedTimeRef.current;
 
         if (cleanedLoggedExercises.length === 0) {
             if (window.confirm("Nenhum exercício foi registrado. O treino não será salvo. Deseja continuar?")) {
@@ -464,15 +479,11 @@ const WorkoutSessionScreen: React.FC = () => {
                 </button>
                 <div className="text-center">
                     <h1 className="text-sm font-semibold text-light-text-secondary dark:text-dark-text-secondary -mb-1 truncate px-2">{routine.name}</h1>
-                    <button
-                        onClick={() => setIsTimerEditModalOpen(true)}
-                        className="text-xl font-bold text-secondary tabular-nums p-1 rounded-md hover:bg-light-bg dark:hover:bg-dark-bg transition-colors"
-                        aria-label="Editar cronômetro"
-                    >
-                        <div aria-live="polite">
-                            {formatDuration(elapsedTime)}
-                        </div>
-                    </button>
+                    <TimerDisplay
+                        key={timerDisplayKey}
+                        initialTime={elapsedTimeRef.current}
+                        onEdit={() => setIsTimerEditModalOpen(true)}
+                    />
                 </div>
                 <button onClick={handleCancelWorkout} className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-md text-sm whitespace-nowrap">
                     Cancelar
@@ -748,8 +759,11 @@ const WorkoutSessionScreen: React.FC = () => {
                 <TimerEditModal
                     isOpen={isTimerEditModalOpen}
                     onClose={() => setIsTimerEditModalOpen(false)}
-                    onSave={(newTime) => setElapsedTime(newTime)}
-                    initialTime={elapsedTime}
+                    onSave={(newTime) => {
+                        elapsedTimeRef.current = newTime;
+                        setTimerDisplayKey(Date.now());
+                    }}
+                    initialTime={elapsedTimeRef.current}
                 />
             )}
             {infoExercise && (

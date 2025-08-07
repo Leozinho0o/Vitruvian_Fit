@@ -1,5 +1,5 @@
 
-import React, { useState, Fragment } from 'react';
+import React, { useState, Fragment, useEffect } from 'react';
 import { ChevronDownIcon, XIcon } from './Icons';
 
 interface EffortPickerOption {
@@ -18,6 +18,18 @@ interface EffortPickerProps {
 const EffortPicker: React.FC<EffortPickerProps> = ({ value, onChange, options, placeholder = "Esforço", disabled = false }) => {
     const [isModalOpen, setIsModalOpen] = useState(false);
 
+    useEffect(() => {
+        const body = document.body;
+        const originalStyle = window.getComputedStyle(body).overflow;
+        if (isModalOpen) {
+            body.style.overflow = 'hidden';
+        }
+        
+        return () => {
+            body.style.overflow = originalStyle;
+        };
+    }, [isModalOpen]);
+
     const selectedOption = options.find(opt => opt.value === value);
 
     const handleSelect = (selectedValue: string | undefined) => {
@@ -26,8 +38,14 @@ const EffortPicker: React.FC<EffortPickerProps> = ({ value, onChange, options, p
     };
     
     const EffortPickerModal = () => (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex flex-col justify-end z-50" role="dialog" aria-modal="true">
-            <div className="bg-light-card dark:bg-dark-card rounded-t-2xl max-h-[80vh] flex flex-col">
+        <div 
+            className="fixed inset-0 bg-black bg-opacity-75 flex flex-col justify-end z-50" 
+            role="dialog" 
+            aria-modal="true"
+        >
+            <div 
+                className="bg-light-card dark:bg-dark-card rounded-t-2xl max-h-[80vh] flex flex-col"
+            >
                 <header className="flex items-center justify-between p-4 border-b border-light-border dark:border-dark-border flex-shrink-0">
                     <h3 className="text-lg font-bold text-light-text dark:text-dark-text">Selecionar Esforço</h3>
                     <button onClick={() => setIsModalOpen(false)} className="p-1 rounded-full hover:bg-light-bg dark:hover:bg-dark-bg" aria-label="Fechar">
