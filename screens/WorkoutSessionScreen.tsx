@@ -156,7 +156,16 @@ const WorkoutSessionScreen: React.FC = () => {
     [routines, activeWorkoutSession]);
 
     const showNotification = useCallback(async (isWorkoutPaused: boolean) => {
-        if (!('Notification' in window) || Notification.permission !== 'granted' || !routine || !activeWorkoutSession) {
+        if (!('Notification' in window) || !routine || !activeWorkoutSession) {
+            return;
+        }
+
+        let permission = Notification.permission;
+        if (permission === 'default') {
+            permission = await Notification.requestPermission();
+        }
+    
+        if (permission !== 'granted') {
             return;
         }
 
@@ -205,13 +214,6 @@ const WorkoutSessionScreen: React.FC = () => {
         }
     };
 
-    useEffect(() => {
-        // Request permission on mount
-        if ('Notification' in window && Notification.permission === 'default') {
-            Notification.requestPermission();
-        }
-    }, []);
-    
     useEffect(() => {
         if (!activeWorkoutSession || activeWorkoutSession.completed) {
             return;
