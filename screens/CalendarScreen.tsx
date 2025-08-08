@@ -1,11 +1,12 @@
 
+
 import React, { useState, useMemo, useCallback, Fragment, useRef, useEffect } from 'react';
 import { useApp } from '../App';
 import { WorkoutSession, Routine, Folder, PlannedExercise, Unit, Exercise, WorkoutSet } from '../types';
 import { ChevronLeftIcon, ChevronRightIcon, PlayIcon, TrashIcon, XIcon, PlusIcon, PencilIcon, SearchIcon, MinusIcon } from '../components/Icons';
 import { getScaleOptions } from '../constants';
 import ConfirmationModal from '../components/ConfirmationModal';
-import { formatSecondsToMMSS, formatDuration } from '../utils';
+import { formatSecondsToMMSS, formatDuration, vibrate } from '../utils';
 
 // Helper function to determine text color based on background hex color
 const getContrastYIQ = (hexcolor?: string): string => {
@@ -66,6 +67,7 @@ const CalendarScreen: React.FC = () => {
     // For touch drag & drop
     const [ghostElement, setGhostElement] = useState<GhostWorkoutItemProps | null>(null);
     const dragStartInfo = useRef<{ x: number; y: number; workout: WorkoutSession; routine: Routine | undefined; } | null>(null);
+    const dragTimeoutRef = useRef<number | null>(null);
 
     // Zoom state
     const ZOOM_LEVELS = [
@@ -124,16 +126,19 @@ const CalendarScreen: React.FC = () => {
         const routine = routines.find((r: Routine) => r.id === routineId);
         if (!routine) return;
 
-        const dateString = selectedDate.toISOString().split('T')[0];
+        const year = selectedDate.getFullYear();
+        const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+        const dayOfMonth = String(selectedDate.getDate()).padStart(2, '0');
+        const dateString = `${year}-${month}-${dayOfMonth}`;
+
         let workoutStartTime: string;
 
         if (time) {
-            const [hours, minutes] = time.split(':').map(Number);
-            const workoutDate = new Date(selectedDate);
-            workoutDate.setHours(hours, minutes, 0, 0);
-            workoutStartTime = workoutDate.toISOString();
+            const [hours, minutes] = time.split(':');
+            workoutStartTime = `${dateString}T${hours}:${minutes}:00`;
         } else {
-            workoutStartTime = dateString;
+            // Set to midnight of the local day to avoid timezone ambiguity
+            workoutStartTime = `${dateString}T00:00:00`;
         }
 
         const newSession: Omit<WorkoutSession, 'id'> = {
@@ -156,95 +161,123 @@ const CalendarScreen: React.FC = () => {
         }
     }
     
-    const moveWorkoutToDate = useCallback((workoutId: string, newDate: Date) => {
+    const moveWorkoutToDate = useCallback((workoutId: string, newDateString: string) => {
         const workoutToMove = workouts.find((w: WorkoutSession) => w.id === workoutId);
-
+    
         if (workoutToMove) {
             let newStartTime: string;
+            // If the original start time had a time component, preserve it
             if (workoutToMove.startTime.includes('T')) {
-                const originalTime = new Date(workoutToMove.startTime);
-                newDate.setHours(originalTime.getHours());
-                newDate.setMinutes(originalTime.getMinutes());
-                newDate.setSeconds(originalTime.getSeconds());
-                newDate.setMilliseconds(originalTime.getMilliseconds());
-                newStartTime = newDate.toISOString();
+                const timePart = workoutToMove.startTime.split('T')[1];
+                newStartTime = `${newDateString}T${timePart || '00:00:00'}`;
             } else {
-                newStartTime = newDate.toISOString().split('T')[0];
+                // Otherwise, the start time was likely just a date. Fix it to be an unambiguous local time string.
+                newStartTime = `${newDateString}T00:00:00`;
             }
-
+    
             const updatedWorkout: WorkoutSession = {
                 ...workoutToMove,
-                date: newDate.toISOString().split('T')[0],
-                startTime: newStartTime
+                date: newDateString,
+                startTime: newStartTime,
             };
             updateWorkout(updatedWorkout);
         }
     }, [workouts, updateWorkout]);
 
 
-    const handleDrop = (e: React.DragEvent<HTMLDivElement>, day: Date) => {
+    const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
         e.preventDefault();
-        const workoutId = e.dataTransfer.getData('application/vitruvian-fit-workout');
-        if (workoutId) {
-            moveWorkoutToDate(workoutId, day);
+        const workoutId = e.dataTransfer.getData('text/plain');
+        const target = e.target as HTMLElement;
+        const dayCell = target.closest('[data-date]');
+        
+        if (workoutId && dayCell) {
+            const dayString = dayCell.getAttribute('data-date');
+            if (dayString) {
+                moveWorkoutToDate(workoutId, dayString);
+            }
         }
+        
         setDropTargetDate(null);
         setDraggingWorkoutId(null);
-    };
+    }, [moveWorkoutToDate]);
+
 
     // --- Touch Handlers for Mobile Drag & Drop ---
     const handleTouchStart = (e: React.TouchEvent, workout: WorkoutSession, routine: Routine | undefined) => {
         if (e.touches.length > 1) return;
+
         dragStartInfo.current = {
             x: e.touches[0].clientX,
             y: e.touches[0].clientY,
             workout,
-            routine
+            routine,
         };
+
+        if (dragTimeoutRef.current) {
+            clearTimeout(dragTimeoutRef.current);
+        }
+
+        dragTimeoutRef.current = window.setTimeout(() => {
+            if (!dragStartInfo.current) return;
+
+            const { workout, routine, x, y } = dragStartInfo.current;
+            setDraggingWorkoutId(workout.id);
+            setGhostElement({
+                routine,
+                x,
+                y,
+            });
+            vibrate(50);
+            dragTimeoutRef.current = null;
+        }, 500); // 500ms delay for long press
     };
     
     const handleTouchMove = (e: React.TouchEvent) => {
         if (!dragStartInfo.current) return;
         
         const touch = e.touches[0];
-        const dx = Math.abs(touch.clientX - dragStartInfo.current.x);
-        const dy = Math.abs(touch.clientY - dragStartInfo.current.y);
-
-        // Threshold to differentiate a tap from a drag
-        if (dx < 5 && dy < 5 && !draggingWorkoutId) return;
-
-        // --- It's a drag ---
-        if (e.cancelable) e.preventDefault();
-
-        // Start drag state if it hasn't started
-        if (!draggingWorkoutId) {
-            const { workout, routine } = dragStartInfo.current;
-            setDraggingWorkoutId(workout.id);
-            setGhostElement({
-                routine,
-                x: touch.clientX,
-                y: touch.clientY,
-            });
-        }
         
-        // Update ghost position
+        // If we are not yet dragging (long press timer is still running)
+        if (!draggingWorkoutId) {
+            const dx = Math.abs(touch.clientX - dragStartInfo.current.x);
+            const dy = Math.abs(touch.clientY - dragStartInfo.current.y);
+
+            // If user moves too much, it's a scroll, not a drag. Cancel the timer.
+            if (dx > 10 || dy > 10) {
+                if (dragTimeoutRef.current) {
+                    clearTimeout(dragTimeoutRef.current);
+                    dragTimeoutRef.current = null;
+                }
+                dragStartInfo.current = null; // Cancel the potential drag
+            }
+            return; // Don't do anything else until drag starts
+        }
+    
+        // Drag has started, update ghost position
+        if (e.cancelable) e.preventDefault();
+    
         setGhostElement(g => g ? { ...g, x: touch.clientX, y: touch.clientY } : null);
         
-        // Find drop target
         const ghostDOMElement = document.getElementById('ghost-workout-item');
         if (ghostDOMElement) ghostDOMElement.style.display = 'none';
         const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
         if (ghostDOMElement) ghostDOMElement.style.display = 'block';
-
+    
         const dayCell = targetElement?.closest('[data-date]');
         const date = dayCell?.getAttribute('data-date');
         setDropTargetDate(date || null);
     };
 
     const handleTouchEnd = () => {
+        if (dragTimeoutRef.current) {
+            clearTimeout(dragTimeoutRef.current);
+            dragTimeoutRef.current = null;
+        }
+    
         if (draggingWorkoutId && dropTargetDate) {
-            const newDate = new Date(`${dropTargetDate}T00:00:00`);
-            moveWorkoutToDate(draggingWorkoutId, newDate);
+            // dropTargetDate is already a 'YYYY-MM-DD' string from the data-date attribute.
+            moveWorkoutToDate(draggingWorkoutId, dropTargetDate);
         }
         
         // Cleanup
@@ -276,7 +309,7 @@ const CalendarScreen: React.FC = () => {
                     </div>
                     <div className="grid grid-cols-7 gap-1">
                         {calendarGrid.map((day, index) => {
-                            const dayString = day ? day.toISOString().split('T')[0] : '';
+                            const dayString = day ? `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}` : '';
                             const isDropTarget = dropTargetDate === dayString;
 
                             return (
@@ -289,7 +322,7 @@ const CalendarScreen: React.FC = () => {
                                          if(day) setDropTargetDate(dayString);
                                      }}
                                      onDragLeave={() => setDropTargetDate(null)}
-                                     onDrop={(e) => day && handleDrop(e, day)}
+                                     onDrop={handleDrop}
                                 >
                                     {day && (
                                         <>
@@ -307,7 +340,7 @@ const CalendarScreen: React.FC = () => {
                                                              draggable="true"
                                                              onDragStart={(e) => {
                                                                  e.stopPropagation();
-                                                                 e.dataTransfer.setData('application/vitruvian-fit-workout', workout.id);
+                                                                 e.dataTransfer.setData('text/plain', workout.id);
                                                                  e.dataTransfer.effectAllowed = 'move';
                                                                  setDraggingWorkoutId(workout.id);
                                                              }}
@@ -349,7 +382,16 @@ const CalendarScreen: React.FC = () => {
                     onDelete={() => setConfirmDeleteWorkoutId(selectedWorkout.id)}
                     onStart={() => {
                         if (selectedWorkout) {
-                           setActiveWorkoutSession(selectedWorkout);
+                            if (!selectedWorkout.completed) {
+                                // For un-completed workouts, reset the start time to now.
+                                setActiveWorkoutSession({
+                                    ...selectedWorkout,
+                                    startTime: new Date().toISOString(),
+                                });
+                            } else {
+                                // For completed ones, just open for editing.
+                                setActiveWorkoutSession(selectedWorkout);
+                            }
                         }
                         setSelectedWorkout(null);
                     }}

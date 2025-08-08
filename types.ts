@@ -123,7 +123,7 @@ export interface LoggedExercise {
 export interface WorkoutSession {
   id: string;
   routineId: string;
-  date: string; // ISO string
+  date: string; // YYYY-MM-DD
   startTime: string; // ISO string
   endTime: string | null;
   loggedExercises: LoggedExercise[];

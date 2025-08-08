@@ -1,3 +1,5 @@
+
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp } from '../App';
 import { Exercise, WorkoutSession, LoggedExercise, WorkoutSet, MeasurementType, Unit, PerceivedExertionScale, ExerciseCategory, Evaluation } from '../types';
@@ -88,9 +90,20 @@ const WorkoutSessionScreen: React.FC = () => {
     [routines, activeWorkoutSession]);
 
     const elapsedTime = useMemo(() => {
-        if (!activeWorkoutSession?.startTime) return 0;
-        const startTimestamp = new Date(activeWorkoutSession.startTime).getTime();
-        return Math.floor((now - startTimestamp) / 1000);
+        if (!activeWorkoutSession) return 0;
+        
+        // If the workout is completed, show its final duration.
+        if (activeWorkoutSession.completed && typeof activeWorkoutSession.duration === 'number') {
+            return activeWorkoutSession.duration;
+        }
+
+        // Otherwise, if it's ongoing, calculate elapsed time from its start time.
+        if (activeWorkoutSession.startTime) {
+            const startTimestamp = new Date(activeWorkoutSession.startTime).getTime();
+            return Math.floor((now - startTimestamp) / 1000);
+        }
+
+        return 0; // Fallback
     }, [now, activeWorkoutSession]);
 
     useEffect(() => {
