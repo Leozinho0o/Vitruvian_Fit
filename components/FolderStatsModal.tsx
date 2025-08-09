@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState } from 'react';
 import { Folder, Routine, Exercise, ExerciseCategory, Unit, MeasurementType, Evaluation } from '../types';
 import { useApp } from '../App';
@@ -49,31 +50,32 @@ const FolderStatsModal: React.FC<FolderStatsModalProps> = ({ folder, routines, e
                 const uniqueMuscles = new Set([...exercise.primaryMuscles, ...exercise.secondaryMuscles]);
 
                 for (const set of plannedEx.sets) {
-                    const avgReps = getAverageReps(set);
                     const effort = parseEffortToNumber(set.effort);
                     
                     if (exercise.category === ExerciseCategory.RESISTED) {
-                        if (exercise.unit === Unit.KG) {
-                            const setValue = (set.value ?? 0) + (plannedEx.barbellWeight ?? 0);
-                            let calculatedLoad;
-        
-                            if (exercise.isCounterweight && latestBodyMass && setValue > 0) {
-                                calculatedLoad = Math.max(0, latestBodyMass - setValue);
-                            } else {
-                                calculatedLoad = exercise.isWeightDoubled ? (setValue * 2) : setValue;
-                            }
-                            
-                            if (avgReps > 0 && calculatedLoad > 0) {
-                                totalVolume += avgReps * calculatedLoad;
-                                if (effort > 0) {
+                        if (effort >= 7) {
+                            const avgReps = getAverageReps(set);
+                            if (exercise.unit === Unit.KG) {
+                                const setValue = (set.value ?? 0) + (plannedEx.barbellWeight ?? 0);
+                                let calculatedLoad;
+            
+                                if (exercise.isCounterweight && latestBodyMass && setValue > 0) {
+                                    calculatedLoad = Math.max(0, latestBodyMass - setValue);
+                                } else {
+                                    calculatedLoad = exercise.isWeightDoubled ? (setValue * 2) : setValue;
+                                }
+                                
+                                if (avgReps > 0 && calculatedLoad > 0) {
+                                    totalVolume += avgReps * calculatedLoad;
                                     totalInternalLoadResisted += avgReps * calculatedLoad * effort;
                                 }
                             }
+                            uniqueMuscles.forEach(m => {
+                                seriesByMuscleResisted.set(m, (seriesByMuscleResisted.get(m) || 0) + 1);
+                            });
                         }
-                        uniqueMuscles.forEach(m => {
-                            seriesByMuscleResisted.set(m, (seriesByMuscleResisted.get(m) || 0) + 1);
-                        });
                     } else if (exercise.category === ExerciseCategory.CARDIO) {
+                        const avgReps = getAverageReps(set);
                         const timeInMinutes = (set.time ?? 0) / 60;
                         const value = set.value ?? 0;
                         if (timeInMinutes > 0) {
@@ -83,6 +85,7 @@ const FolderStatsModal: React.FC<FolderStatsModalProps> = ({ folder, routines, e
                             }
                         }
                     } else if (exercise.category === ExerciseCategory.FLEXIBILITY) {
+                        const avgReps = getAverageReps(set);
                         const baseValue = exercise.measurementType === MeasurementType.TIME ? ((set.time ?? 0) / 60) : avgReps;
                         if (baseValue > 0) {
                             totalInternalLoadFlex += baseValue * effort;

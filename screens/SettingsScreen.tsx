@@ -1,8 +1,9 @@
 
+
 import React from 'react';
 import { useApp } from '../App';
 import { Theme } from '../types';
-import { SunIcon, MoonIcon, MonitorIcon, ChevronRightIcon, ClipboardListIcon, DumbbellIcon } from '../components/Icons';
+import { SunIcon, MoonIcon, MonitorIcon, ChevronRightIcon, ClipboardListIcon, DumbbellIcon, BarChartIcon } from '../components/Icons';
 
 const SettingsScreen: React.FC = () => {
     const { 
@@ -10,6 +11,7 @@ const SettingsScreen: React.FC = () => {
         setTheme, 
         setIsPhysicalEvaluationScreenOpen,
         setIsMuscleGroupsScreenOpen,
+        setIsPhysicalTestsScreenOpen,
     } = useApp();
 
     const themeOptions = [
@@ -51,6 +53,17 @@ const SettingsScreen: React.FC = () => {
                     <div className="flex items-center">
                         <ClipboardListIcon className="h-6 w-6 mr-4 text-primary"/>
                         <h2 className="text-xl font-bold text-light-text dark:text-dark-text">Avaliação Física</h2>
+                    </div>
+                    <ChevronRightIcon className="h-6 w-6 text-light-text-secondary dark:text-dark-text-secondary"/>
+                </button>
+                 <button
+                    onClick={() => setIsPhysicalTestsScreenOpen(true)}
+                    className="w-full flex justify-between items-center cursor-pointer p-3 bg-light-card dark:bg-dark-card rounded-lg shadow-sm hover:bg-light-bg dark:hover:bg-dark-border"
+                    aria-label="Abrir tela de testes físicos"
+                >
+                    <div className="flex items-center">
+                        <BarChartIcon className="h-6 w-6 mr-4 text-primary"/>
+                        <h2 className="text-xl font-bold text-light-text dark:text-dark-text">Testes Físicos</h2>
                     </div>
                     <ChevronRightIcon className="h-6 w-6 text-light-text-secondary dark:text-dark-text-secondary"/>
                 </button>

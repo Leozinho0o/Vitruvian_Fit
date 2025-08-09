@@ -14,6 +14,7 @@ import ExerciseFormScreen from './screens/ExerciseFormScreen';
 import MeasurementsScreen from './screens/MeasurementsScreen';
 import MuscleGroupsScreen from './screens/MuscleGroupsScreen';
 import PhysicalEvaluationScreen from './screens/PhysicalEvaluationScreen';
+import PhysicalTestsScreen from './screens/PhysicalTestsScreen';
 import ConfirmationModal from './components/ConfirmationModal';
 
 
@@ -78,6 +79,7 @@ const App: React.FC = () => {
     const [isMeasurementsScreenOpen, setIsMeasurementsScreenOpen] = useState(false);
     const [isMuscleGroupsScreenOpen, setIsMuscleGroupsScreenOpen] = useState(false);
     const [isPhysicalEvaluationScreenOpen, setIsPhysicalEvaluationScreenOpen] = useState(false);
+    const [isPhysicalTestsScreenOpen, setIsPhysicalTestsScreenOpen] = useState(false);
     const [selectedEvaluationDate, setSelectedEvaluationDate] = useState<string | null>(null);
     const [infoModalContent, setInfoModalContent] = useState<{ title: string; message: React.ReactNode; onConfirm?: () => void; confirmText?: string; showCancelButton?: boolean, cancelText?: string; } | null>(null);
 
@@ -357,6 +359,7 @@ const App: React.FC = () => {
         isMeasurementsScreenOpen, setIsMeasurementsScreenOpen,
         isMuscleGroupsScreenOpen, setIsMuscleGroupsScreenOpen,
         isPhysicalEvaluationScreenOpen, setIsPhysicalEvaluationScreenOpen,
+        isPhysicalTestsScreenOpen, setIsPhysicalTestsScreenOpen,
         theme, setTheme,
         setInfoModalContent,
         addExercise,
@@ -382,7 +385,7 @@ const App: React.FC = () => {
         deleteEvaluation,
         startWorkoutFromRoutine,
     }), [
-        exercises, routines, folders, workouts, muscleGroups, evaluations, activeWorkoutSession, editingExercise, theme, isMeasurementsScreenOpen, isMuscleGroupsScreenOpen, isPhysicalEvaluationScreenOpen, selectedEvaluationDate,
+        exercises, routines, folders, workouts, muscleGroups, evaluations, activeWorkoutSession, editingExercise, theme, isMeasurementsScreenOpen, isMuscleGroupsScreenOpen, isPhysicalEvaluationScreenOpen, isPhysicalTestsScreenOpen, selectedEvaluationDate,
         addExercise, updateExercise, deleteExercise, duplicateExercise,
         addRoutine, updateRoutine, deleteRoutine, duplicateRoutine, moveRoutineToFolder, reorderRoutines,
         addFolder, updateFolder, deleteFolder, 
@@ -390,10 +393,13 @@ const App: React.FC = () => {
         addMuscleGroup, editMuscleGroup, deleteMuscleGroup,
         saveEvaluation, deleteEvaluation,
         startWorkoutFromRoutine,
-        setExercises, setRoutines, setFolders, setWorkouts, setMuscleGroups, setEvaluations, setTheme, setInfoModalContent, setActiveWorkoutSession, setEditingExercise, setIsMeasurementsScreenOpen, setIsMuscleGroupsScreenOpen, setIsPhysicalEvaluationScreenOpen, setSelectedEvaluationDate,
+        setExercises, setRoutines, setFolders, setWorkouts, setMuscleGroups, setEvaluations, setTheme, setInfoModalContent, setActiveWorkoutSession, setEditingExercise, setIsMeasurementsScreenOpen, setIsMuscleGroupsScreenOpen, setIsPhysicalEvaluationScreenOpen, setIsPhysicalTestsScreenOpen, setSelectedEvaluationDate,
     ]);
 
     const renderContent = () => {
+        if (isPhysicalTestsScreenOpen) {
+            return <PhysicalTestsScreen />;
+        }
         if (isPhysicalEvaluationScreenOpen) {
             return <PhysicalEvaluationScreen />;
         }
@@ -423,7 +429,7 @@ const App: React.FC = () => {
         setActiveView(view);
     }
 
-    const isFullScreenView = activeWorkoutSession || editingExercise || isMeasurementsScreenOpen || isMuscleGroupsScreenOpen || isPhysicalEvaluationScreenOpen;
+    const isFullScreenView = activeWorkoutSession || editingExercise || isMeasurementsScreenOpen || isMuscleGroupsScreenOpen || isPhysicalEvaluationScreenOpen || isPhysicalTestsScreenOpen;
 
     return (
         <AppContext.Provider value={contextValue}>

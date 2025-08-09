@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState } from 'react';
 import { useApp } from '../App';
 import { WorkoutSession, Routine, ExerciseCategory, Unit, MeasurementType, Evaluation } from '../types';
@@ -16,8 +17,8 @@ const StatsScreen: React.FC = () => {
     const { workouts, routines, exercises, muscleGroups, evaluations } = useApp();
     const [isGeralExpanded, setIsGeralExpanded] = useState(true);
     const [isResistidoExpanded, setIsResistidoExpanded] = useState(true);
-    const [isCardioExpanded, setIsCardioExpanded] = useState(true);
-    const [isFlexibilidadeExpanded, setIsFlexibilidadeExpanded] = useState(true);
+    const [isCardioExpanded, setIsCardioExpanded] = useState(false);
+    const [isFlexibilidadeExpanded, setIsFlexibilidadeExpanded] = useState(false);
     const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
     // Default to last 5 days
@@ -185,18 +186,21 @@ const StatsScreen: React.FC = () => {
                 const exercise = exercises.find(e => e.id === loggedEx.exerciseId);
                 if (exercise && exercise.category === ExerciseCategory.RESISTED && exercise.unit === Unit.KG) {
                     loggedEx.sets.forEach(set => {
-                        const reps = set.reps ?? 0;
-                        const setValue = (set.value ?? 0) + (loggedEx.barbellWeight ?? 0);
-                        let calculatedLoad;
-            
-                        if (exercise.isCounterweight && latestBodyMass && setValue > 0) {
-                            calculatedLoad = Math.max(0, latestBodyMass - setValue);
-                        } else {
-                            calculatedLoad = exercise.isWeightDoubled ? (setValue * 2) : setValue;
-                        }
-            
-                        if (reps > 0 && calculatedLoad > 0) {
-                            routineVolume += reps * calculatedLoad;
+                        const effortValue = parseEffortToNumber(set.effort);
+                        if (effortValue >= 7) {
+                            const reps = set.reps ?? 0;
+                            const setValue = (set.value ?? 0) + (loggedEx.barbellWeight ?? 0);
+                            let calculatedLoad;
+                
+                            if (exercise.isCounterweight && latestBodyMass && setValue > 0) {
+                                calculatedLoad = Math.max(0, latestBodyMass - setValue);
+                            } else {
+                                calculatedLoad = exercise.isWeightDoubled ? (setValue * 2) : setValue;
+                            }
+                
+                            if (reps > 0 && calculatedLoad > 0) {
+                                routineVolume += reps * calculatedLoad;
+                            }
                         }
                     });
                 }
@@ -248,20 +252,22 @@ const StatsScreen: React.FC = () => {
                 const exercise = exercises.find(e => e.id === loggedEx.exerciseId);
                 if (exercise && exercise.category === ExerciseCategory.RESISTED) {
                     loggedEx.sets.forEach(set => {
-                        const reps = set.reps ?? 0;
-                        const setValue = (set.value ?? 0) + (loggedEx.barbellWeight ?? 0);
-                        let calculatedLoad;
-
-                        if (exercise.isCounterweight && latestBodyMass && setValue > 0) {
-                            calculatedLoad = Math.max(0, latestBodyMass - setValue);
-                        } else {
-                            calculatedLoad = exercise.isWeightDoubled ? (setValue * 2) : setValue;
-                        }
-                        
                         const effortValue = parseEffortToNumber(set.effort);
-                        if (reps > 0 && calculatedLoad > 0 && effortValue > 0) {
-                            const weightedLoad = reps * calculatedLoad * effortValue;
-                            routineInternalLoad += weightedLoad;
+                        if (effortValue >= 7) {
+                            const reps = set.reps ?? 0;
+                            const setValue = (set.value ?? 0) + (loggedEx.barbellWeight ?? 0);
+                            let calculatedLoad;
+
+                            if (exercise.isCounterweight && latestBodyMass && setValue > 0) {
+                                calculatedLoad = Math.max(0, latestBodyMass - setValue);
+                            } else {
+                                calculatedLoad = exercise.isWeightDoubled ? (setValue * 2) : setValue;
+                            }
+                            
+                            if (reps > 0 && calculatedLoad > 0) {
+                                const weightedLoad = reps * calculatedLoad * effortValue;
+                                routineInternalLoad += weightedLoad;
+                            }
                         }
                     });
                 }
@@ -294,7 +300,7 @@ const StatsScreen: React.FC = () => {
             w.loggedExercises.forEach(loggedEx => {
                 const exercise = exercises.find(e => e.id === loggedEx.exerciseId);
                 if (exercise && exercise.category === ExerciseCategory.RESISTED) {
-                    const numSets = loggedEx.sets.length;
+                    const numSets = loggedEx.sets.filter(set => parseEffortToNumber(set.effort) >= 7).length;
                     if (numSets > 0) {
                         const uniqueMuscles = new Set([...exercise.primaryMuscles, ...exercise.secondaryMuscles]);
                         uniqueMuscles.forEach(muscle => {
@@ -610,17 +616,17 @@ const StatsScreen: React.FC = () => {
                             <div className="pt-4 space-y-12">
                                 <div className="pl-8">
                                     <h3 className="text-lg font-semibold text-light-text dark:text-dark-text mb-1">Carga Externa (Kg)</h3>
-                                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Cálculo: Soma de (repetições x carga) para todas as séries.</p>
+                                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Cálculo: Soma de (repetições x carga) para todas as séries com esforço &ge; 7.</p>
                                     <BarChart data={dailyVolumeData} isStacked={true} unit="Kg" />
                                 </div>
                                 <div className="pl-8">
                                     <h3 className="text-lg font-semibold text-light-text dark:text-dark-text mb-1">Carga Interna (UA)</h3>
-                                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Cálculo: Soma de (repetições x carga x esforço) para todas as séries.</p>
+                                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Cálculo: Soma de (repetições x carga x esforço) para todas as séries com esforço &ge; 7.</p>
                                     <BarChart data={dailyInternalLoadData} isStacked={true} unit="UA" />
                                 </div>
                                 <div>
                                     <h3 className="text-lg font-semibold text-light-text dark:text-dark-text mb-1">Séries por Grupo Muscular</h3>
-                                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Soma do número de séries de todos os exercícios resistidos que trabalham cada grupo muscular.</p>
+                                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Soma do número de séries com esforço &ge; 7 de todos os exercícios resistidos que trabalham cada grupo muscular.</p>
                                     <HorizontalBarChart data={seriesByMuscleGroupData} unit="séries" />
                                 </div>
                             </div>

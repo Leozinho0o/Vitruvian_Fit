@@ -7,37 +7,31 @@ interface EffortPickerOption {
   label: string;
 }
 
-interface EffortPickerProps {
-  value: string | undefined;
-  onChange: (value: string | undefined) => void;
-  options: EffortPickerOption[];
-  placeholder?: string;
-  disabled?: boolean;
+interface EffortPickerModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    onSelect: (value: string | undefined) => void;
+    options: EffortPickerOption[];
+    currentValue: string | undefined;
 }
 
-const EffortPicker: React.FC<EffortPickerProps> = ({ value, onChange, options, placeholder = "Esforço", disabled = false }) => {
-    const [isModalOpen, setIsModalOpen] = useState(false);
-
+const EffortPickerModal: React.FC<EffortPickerModalProps> = ({ isOpen, onClose, onSelect, options, currentValue }) => {
     useEffect(() => {
         const body = document.body;
         const originalStyle = window.getComputedStyle(body).overflow;
-        if (isModalOpen) {
+        if (isOpen) {
             body.style.overflow = 'hidden';
         }
-        
         return () => {
             body.style.overflow = originalStyle;
         };
-    }, [isModalOpen]);
+    }, [isOpen]);
 
-    const selectedOption = options.find(opt => opt.value === value);
+    if (!isOpen) {
+        return null;
+    }
 
-    const handleSelect = (selectedValue: string | undefined) => {
-        onChange(selectedValue);
-        setIsModalOpen(false);
-    };
-    
-    const EffortPickerModal = () => (
+    return (
         <div 
             className="fixed inset-0 bg-black bg-opacity-75 flex flex-col justify-end z-50" 
             role="dialog" 
@@ -48,7 +42,7 @@ const EffortPicker: React.FC<EffortPickerProps> = ({ value, onChange, options, p
             >
                 <header className="flex items-center justify-between p-4 border-b border-light-border dark:border-dark-border flex-shrink-0">
                     <h3 className="text-lg font-bold text-light-text dark:text-dark-text">Selecionar Esforço</h3>
-                    <button onClick={() => setIsModalOpen(false)} className="p-1 rounded-full hover:bg-light-bg dark:hover:bg-dark-bg" aria-label="Fechar">
+                    <button onClick={onClose} className="p-1 rounded-full hover:bg-light-bg dark:hover:bg-dark-bg" aria-label="Fechar">
                         <XIcon className="h-6 w-6 text-light-text-secondary dark:text-dark-text-secondary" />
                     </button>
                 </header>
@@ -57,20 +51,20 @@ const EffortPicker: React.FC<EffortPickerProps> = ({ value, onChange, options, p
                         {options.map(option => (
                             <button
                                 key={option.value}
-                                onClick={() => handleSelect(option.value)}
-                                className={`w-full text-left p-4 rounded-lg border-2 transition-colors ${value === option.value ? 'bg-primary/10 border-primary text-primary' : 'bg-light-bg dark:bg-dark-bg border-transparent hover:border-primary/50'}`}
+                                onClick={() => onSelect(option.value)}
+                                className={`w-full text-left p-4 rounded-lg border-2 transition-colors ${currentValue === option.value ? 'bg-primary/10 border-primary text-primary' : 'bg-light-bg dark:bg-dark-bg border-transparent hover:border-primary/50'}`}
                                 role="option"
-                                aria-selected={value === option.value}
+                                aria-selected={currentValue === option.value}
                             >
                                 <p className="font-bold text-light-text dark:text-dark-text">{option.value}</p>
-                                <p className={`text-sm ${value === option.value ? 'text-primary' : 'text-light-text-secondary dark:text-dark-text-secondary'}`}>{option.label}</p>
+                                <p className={`text-sm ${currentValue === option.value ? 'text-primary' : 'text-light-text-secondary dark:text-dark-text-secondary'}`}>{option.label}</p>
                             </button>
                         ))}
                     </div>
                 </div>
                 <footer className="p-4 border-t border-light-border dark:border-dark-border flex-shrink-0 space-y-2">
                     <button
-                        onClick={() => handleSelect(undefined)}
+                        onClick={() => onSelect(undefined)}
                         className="w-full bg-gray-200 dark:bg-gray-700 text-light-text dark:text-dark-text font-bold py-3 px-4 rounded-md"
                     >
                         Limpar Seleção
@@ -79,6 +73,24 @@ const EffortPicker: React.FC<EffortPickerProps> = ({ value, onChange, options, p
             </div>
         </div>
     );
+};
+
+interface EffortPickerProps {
+  value: string | undefined;
+  onChange: (value: string | undefined) => void;
+  options: EffortPickerOption[];
+  placeholder?: string;
+  disabled?: boolean;
+}
+
+const EffortPicker: React.FC<EffortPickerProps> = ({ value, onChange, options, placeholder = "Esforço", disabled = false }) => {
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const selectedOption = options.find(opt => opt.value === value);
+
+    const handleSelect = (selectedValue: string | undefined) => {
+        onChange(selectedValue);
+        setIsModalOpen(false);
+    };
 
     return (
         <Fragment>
@@ -95,7 +107,13 @@ const EffortPicker: React.FC<EffortPickerProps> = ({ value, onChange, options, p
                 </span>
                 <ChevronDownIcon className="h-4 w-4 text-light-text-secondary dark:text-dark-text-secondary" />
             </button>
-            {isModalOpen && <EffortPickerModal />}
+            <EffortPickerModal 
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                onSelect={handleSelect}
+                options={options}
+                currentValue={value}
+            />
         </Fragment>
     );
 };
