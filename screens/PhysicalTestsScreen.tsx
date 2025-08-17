@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../App';
 import { Exercise, Unit, ExerciseCategory } from '../types';
@@ -10,6 +9,16 @@ import { parseEffortToNumber } from '../utils';
 const formatDateForInput = (date: Date): string => {
     return date.toISOString().split('T')[0];
 };
+
+const repEstimationTableData = [
+    { percentage: 100, reps: '1' },
+    { percentage: 95, reps: '2' },
+    { percentage: 90, reps: '3 a 4' },
+    { percentage: 85, reps: '5 a 6' },
+    { percentage: 80, reps: '7 a 8' },
+    { percentage: 75, reps: '9 a 10' },
+    { percentage: 70, reps: '11 a 12' },
+];
 
 // Accordion Section Component
 interface AccordionSectionProps {
@@ -125,15 +134,16 @@ const PhysicalTestsScreen: React.FC = () => {
     // Date filter state
     const [startDate, setStartDate] = useState<string>('');
     const [endDate, setEndDate] = useState<string>('');
+    const [selected1RMForTable, setSelected1RMForTable] = useState<number | null>(null);
 
     const onClose = () => {
         setIsPhysicalTestsScreenOpen(false);
     };
 
-    const oneRmHistory = useMemo(() => {
-        if (!selectedExercise) return [];
+    const oneRmStats = useMemo(() => {
+        if (!selectedExercise) return { history: [], highest1RM: null, bestSet: null };
 
-        const completedWorkouts = workouts.filter((w:any) => w.completed && w.date);
+        const completedWorkouts = workouts.filter((w: any) => w.completed && w.date);
         const latestBodyMass = (evaluations && evaluations.length > 0) ? evaluations[0].measurements.bodyMass : undefined;
 
         const calculate1RM = (reps: number, load: number) => {
@@ -141,10 +151,11 @@ const PhysicalTestsScreen: React.FC = () => {
             if (reps === 1) return load;
             return load * (1 + reps / 30);
         };
-    
-        const dailyMax1RMs = new Map<string, { max1RM: number; routineId: string }>();
 
-        // Calculate daily max 1RM across all workouts with high effort
+        const dailyMax1RMs = new Map<string, { max1RM: number; routineId: string }>();
+        let overallHighest1RM = 0;
+        let bestSetForOverallHighest1RM: { reps: number; weight: number } | null = null;
+
         for (const session of completedWorkouts) {
             let sessionMax1RM = 0;
             for (const loggedEx of session.loggedExercises) {
@@ -159,9 +170,17 @@ const PhysicalTestsScreen: React.FC = () => {
                         let totalLoad = setWeight + barbellWeight;
                         if (selectedExercise.isWeightDoubled) totalLoad *= 2;
                         else if (selectedExercise.isCounterweight && latestBodyMass && totalLoad > 0) totalLoad = Math.max(0, latestBodyMass - totalLoad);
-                        
+
                         const current1RM = calculate1RM(reps, totalLoad);
-                        if (current1RM > sessionMax1RM) sessionMax1RM = current1RM;
+                        
+                        if (current1RM > sessionMax1RM) {
+                            sessionMax1RM = current1RM;
+                        }
+
+                        if (current1RM > overallHighest1RM) {
+                            overallHighest1RM = current1RM;
+                            bestSetForOverallHighest1RM = { reps, weight: totalLoad };
+                        }
                     }
                 }
             }
@@ -173,11 +192,11 @@ const PhysicalTestsScreen: React.FC = () => {
                 }
             }
         }
-    
-        const fullHistory: (ChartData & { date: string })[] = Array.from(dailyMax1RMs.entries())
+
+        const history: (ChartData & { date: string })[] = Array.from(dailyMax1RMs.entries())
             .sort(([dateA], [dateB]) => new Date(dateA).getTime() - new Date(dateB).getTime())
             .map(([date, data]) => {
-                const routine = routines.find((r:any) => r.id === data.routineId);
+                const routine = routines.find((r: any) => r.id === data.routineId);
                 const rounded1RM = Math.round(data.max1RM);
                 return {
                     label: new Date(`${date}T00:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
@@ -186,11 +205,17 @@ const PhysicalTestsScreen: React.FC = () => {
                     date,
                 };
             });
+        
+        const highest1RM = overallHighest1RM > 0 ? { value: Math.round(overallHighest1RM) } : null;
 
-        return fullHistory;
+        return { history, highest1RM, bestSet: bestSetForOverallHighest1RM };
+
     }, [selectedExercise, workouts, routines, evaluations]);
 
-    // Effect to set initial date range
+    const { history: oneRmHistory, highest1RM, bestSet } = oneRmStats;
+
+
+    // Effect to set initial date range and table 1RM
     useEffect(() => {
         if (oneRmHistory.length > 0) {
             const endDate = oneRmHistory[oneRmHistory.length - 1].date;
@@ -203,7 +228,13 @@ const PhysicalTestsScreen: React.FC = () => {
              setStartDate('');
              setEndDate('');
         }
-    }, [oneRmHistory]);
+
+        if (highest1RM) {
+            setSelected1RMForTable(highest1RM.value);
+        } else {
+            setSelected1RMForTable(null);
+        }
+    }, [oneRmHistory, highest1RM]);
 
     // Logic to filter history by date
     const filteredHistoryData = useMemo(() => {
@@ -272,6 +303,65 @@ const PhysicalTestsScreen: React.FC = () => {
                                 <div className="h-64 pl-4 pr-2">
                                     <BarChart data={filteredHistoryData} unit="kg" />
                                 </div>
+
+                                {highest1RM && bestSet && (
+                                    <div className="mt-8 border-t border-light-border dark:border-dark-border pt-6 space-y-4">
+                                        <div className="text-center bg-light-bg dark:bg-dark-bg p-4 rounded-lg">
+                                            <p className="text-sm font-semibold text-light-text dark:text-dark-text">Maior Estimativa de 1 Repetição Máxima (1RM) já registrada</p>
+                                            <p className="text-4xl font-bold text-primary">{highest1RM.value}<span className="text-2xl font-medium"> kg</span></p>
+                                        </div>
+                                        
+                                        <div className="text-center bg-light-bg dark:bg-dark-bg p-4 rounded-lg">
+                                            <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary">Baseado no registro de</p>
+                                            <p className="text-2xl font-bold text-secondary">{bestSet.weight.toFixed(1)}kg <span className="font-normal">para</span> {bestSet.reps} reps</p>
+                                        </div>
+                                        
+                                        <div className="mb-4">
+                                            <label htmlFor="1rm-selector-test" className="block text-sm font-medium mb-1">Basear estimativa no 1RM de:</label>
+                                            <select
+                                                id="1rm-selector-test"
+                                                value={selected1RMForTable ?? ''}
+                                                onChange={(e) => setSelected1RMForTable(Number(e.target.value))}
+                                                className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2"
+                                            >
+                                                <option value={highest1RM.value}>
+                                                    Maior Registrado: {highest1RM.value} kg
+                                                </option>
+                                                {oneRmHistory.slice().reverse().map((record, index) => (
+                                                    <option key={`${record.date}-${index}`} value={record.value}>
+                                                        {record.label}: {record.value} kg
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        {selected1RMForTable && (
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-sm text-left text-light-text-secondary dark:text-dark-text-secondary">
+                                                    <thead className="text-xs text-light-text dark:text-dark-text uppercase bg-light-bg dark:bg-dark-bg">
+                                                        <tr>
+                                                            <th scope="col" className="px-4 py-2">% 1RM</th>
+                                                            <th scope="col" className="px-4 py-2">Carga (kg)</th>
+                                                            <th scope="col" className="px-4 py-2">Repetições Permitidas</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {repEstimationTableData.map(row => {
+                                                            const calculatedLoad = (row.percentage / 100) * selected1RMForTable;
+                                                            return (
+                                                                <tr key={row.percentage} className="border-b border-light-border dark:border-dark-border last:border-b-0">
+                                                                    <td className="px-4 py-2 font-medium text-light-text dark:text-dark-text">{row.percentage}%</td>
+                                                                    <td className="px-4 py-2">{calculatedLoad.toFixed(1)}</td>
+                                                                    <td className="px-4 py-2">{row.reps}</td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </>
                         )}
                     </div>

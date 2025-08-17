@@ -228,29 +228,37 @@ const App: React.FC = () => {
         setRoutines(prev => prev.map(r => r.id === routineId ? { ...r, folderId } : r));
     }, [setRoutines]);
 
-    const reorderRoutines = useCallback((draggedRoutineId: string, targetRoutineId: string) => {
+    const reorderRoutines = useCallback((draggedRoutineId: string, targetRoutineId: string, position: 'top' | 'bottom') => {
         setRoutines(prevRoutines => {
-            const draggedIndex = prevRoutines.findIndex(r => r.id === draggedRoutineId);
-            const targetIndex = prevRoutines.findIndex(r => r.id === targetRoutineId);
+            const routinesCopy = Array.from(prevRoutines);
+            const draggedIndex = routinesCopy.findIndex(r => r.id === draggedRoutineId);
+            let targetIndex = routinesCopy.findIndex(r => r.id === targetRoutineId);
 
-            if (draggedIndex === -1 || targetIndex === -1) {
+            if (draggedIndex === -1 || targetIndex === -1 || draggedIndex === targetIndex) {
                 return prevRoutines;
             }
             
-            const draggedRoutine = prevRoutines[draggedIndex];
-            const targetRoutine = prevRoutines[targetIndex];
+            // Create a mutable copy of the dragged routine
+            const draggedRoutine = { ...routinesCopy[draggedIndex] };
+            const targetRoutine = routinesCopy[targetIndex];
 
-            // Only allow reordering within the same folder
+            // If the target is in a different folder, update the dragged routine's folderId
             if (draggedRoutine.folderId !== targetRoutine.folderId) {
-                return prevRoutines;
+                draggedRoutine.folderId = targetRoutine.folderId;
             }
 
-            const newRoutines = [...prevRoutines];
-            newRoutines.splice(draggedIndex, 1);
-            const newTargetIndex = newRoutines.findIndex(r => r.id === targetRoutineId);
-            newRoutines.splice(newTargetIndex, 0, draggedRoutine);
+            // Remove the item from its original position
+            routinesCopy.splice(draggedIndex, 1);
+            
+            // Find the target index again, as it might have shifted after the splice
+            targetIndex = routinesCopy.findIndex(r => r.id === targetRoutineId);
 
-            return newRoutines;
+            // Insert at the new position
+            const insertIndex = position === 'bottom' ? targetIndex + 1 : targetIndex;
+            // Insert the (potentially modified) routine
+            routinesCopy.splice(insertIndex, 0, draggedRoutine);
+
+            return routinesCopy;
         });
     }, [setRoutines]);
 
@@ -267,6 +275,30 @@ const App: React.FC = () => {
         setRoutines(prev => prev.map(r => r.folderId === folderId ? { ...r, folderId: null } : r));
         setFolders(prev => prev.filter(f => f.id !== folderId));
     }, [setRoutines, setFolders]);
+
+    const reorderFolders = useCallback((draggedFolderId: string, targetFolderId: string, position: 'top' | 'bottom') => {
+        setFolders(prevFolders => {
+            const foldersCopy = Array.from(prevFolders);
+            const draggedIndex = foldersCopy.findIndex(f => f.id === draggedFolderId);
+            let targetIndex = foldersCopy.findIndex(f => f.id === targetFolderId);
+
+            if (draggedIndex === -1 || targetIndex === -1 || draggedIndex === targetIndex) {
+                return prevFolders;
+            }
+            
+            // Remove the item from its original position
+            const [reorderedItem] = foldersCopy.splice(draggedIndex, 1);
+
+            // Find the target index again, as it might have shifted
+            targetIndex = foldersCopy.findIndex(f => f.id === targetFolderId);
+            
+            // Insert at the new position
+            const insertIndex = position === 'bottom' ? targetIndex + 1 : targetIndex;
+            foldersCopy.splice(insertIndex, 0, reorderedItem);
+
+            return foldersCopy;
+        });
+    }, [setFolders]);
 
     const logWorkout = useCallback((session: Omit<WorkoutSession, 'id'>) => {
         setWorkouts(prev => [...prev, { ...session, id: `ws${Date.now()}` }]);
@@ -375,6 +407,7 @@ const App: React.FC = () => {
         addFolder,
         updateFolder,
         deleteFolder,
+        reorderFolders,
         logWorkout,
         updateWorkout,
         deleteWorkout,
@@ -388,7 +421,7 @@ const App: React.FC = () => {
         exercises, routines, folders, workouts, muscleGroups, evaluations, activeWorkoutSession, editingExercise, theme, isMeasurementsScreenOpen, isMuscleGroupsScreenOpen, isPhysicalEvaluationScreenOpen, isPhysicalTestsScreenOpen, selectedEvaluationDate,
         addExercise, updateExercise, deleteExercise, duplicateExercise,
         addRoutine, updateRoutine, deleteRoutine, duplicateRoutine, moveRoutineToFolder, reorderRoutines,
-        addFolder, updateFolder, deleteFolder, 
+        addFolder, updateFolder, deleteFolder, reorderFolders,
         logWorkout, updateWorkout, deleteWorkout, 
         addMuscleGroup, editMuscleGroup, deleteMuscleGroup,
         saveEvaluation, deleteEvaluation,

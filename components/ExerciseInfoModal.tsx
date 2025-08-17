@@ -1,29 +1,31 @@
-
-
 import React, { useMemo, useState, useEffect } from 'react';
 import { useApp } from '../App';
 import { Exercise, Unit, MeasurementType, PerceivedExertionScale, ExerciseCategory } from '../types';
 import { XIcon } from './Icons';
 import { getScaleOptions } from '../constants';
 import { parseEffortToNumber, formatSecondsToMMSS } from '../utils';
-import { BarChart, ChartData } from './Charts';
+import { ChartData } from './Charts';
 
 interface ExerciseInfoModalProps {
     exercise: Exercise;
     onClose: () => void;
 }
 
-// Helper to format a date to 'YYYY-MM-DD'
-const formatDateForInput = (date: Date): string => {
-    return date.toISOString().split('T')[0];
-};
+const repEstimationTableData = [
+    { percentage: 100, reps: '1' },
+    { percentage: 95, reps: '2' },
+    { percentage: 90, reps: '3 a 4' },
+    { percentage: 85, reps: '5 a 6' },
+    { percentage: 80, reps: '7 a 8' },
+    { percentage: 75, reps: '9 a 10' },
+    { percentage: 70, reps: '11 a 12' },
+];
 
 const ExerciseInfoModal: React.FC<ExerciseInfoModalProps> = ({ exercise, onClose }) => {
     const { workouts, routines, evaluations } = useApp();
 
-    // State for date filters
-    const [startDate, setStartDate] = useState<string>('');
-    const [endDate, setEndDate] = useState<string>('');
+    const [selected1RMForTable, setSelected1RMForTable] = useState<number | null>(null);
+
 
     const youtubeId = useMemo(() => {
         if (!exercise.videoUrl) return null;
@@ -135,29 +137,14 @@ const ExerciseInfoModal: React.FC<ExerciseInfoModalProps> = ({ exercise, onClose
         return { fullHistory, overallStats };
     }, [exercise, workouts, routines, evaluations]);
 
-    // This effect sets the initial date range for the chart to the last 4 records
+    // This effect sets the initial 1RM for the table
     useEffect(() => {
-        if (resistanceStats.fullHistory.length > 0) {
-            const history = resistanceStats.fullHistory;
-            const endDate = history[history.length - 1].date;
-            const startIndex = Math.max(0, history.length - 4);
-            const startDate = history[startIndex].date;
-            
-            setStartDate(startDate);
-            setEndDate(endDate);
+        if (resistanceStats.overallStats.type === 'resisted_1rm' && resistanceStats.overallStats.data) {
+            setSelected1RMForTable(resistanceStats.overallStats.data.estimated1RM);
+        } else {
+            setSelected1RMForTable(null);
         }
-    }, [resistanceStats.fullHistory]);
-
-    // This memo filters the chart data based on the selected date range
-    const filteredHistoryData = useMemo(() => {
-        if (!startDate || !endDate || !resistanceStats.fullHistory) return [];
-        const start = new Date(`${startDate}T00:00:00`);
-        const end = new Date(`${endDate}T23:59:59`);
-        return resistanceStats.fullHistory.filter(item => {
-            const itemDate = new Date(`${item.date}T00:00:00`);
-            return itemDate >= start && itemDate <= end;
-        });
-    }, [startDate, endDate, resistanceStats.fullHistory]);
+    }, [resistanceStats.overallStats]);
 
     const otherStats = useMemo(() => {
         if (exercise.category === ExerciseCategory.RESISTED) return null;
@@ -221,7 +208,6 @@ const ExerciseInfoModal: React.FC<ExerciseInfoModalProps> = ({ exercise, onClose
     }, [exercise, workouts]);
 
     const stats = resistanceStats.overallStats.type !== 'none' ? resistanceStats.overallStats : otherStats;
-    const isResistedExercise = exercise.category === ExerciseCategory.RESISTED && exercise.unit === Unit.KG;
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4" aria-modal="true" role="dialog">
@@ -248,7 +234,7 @@ const ExerciseInfoModal: React.FC<ExerciseInfoModalProps> = ({ exercise, onClose
                         {stats?.type === 'resisted_1rm' && stats.data ? (
                             <>
                                 <div className="text-center bg-light-bg dark:bg-dark-bg p-4 rounded-lg">
-                                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary">Estimativa de 1 Repetição Máxima (1RM)</p>
+                                    <p className="text-sm font-semibold text-light-text dark:text-dark-text">Maior Estimativa de 1 Repetição Máxima (1RM) já registrada</p>
                                     <p className="text-4xl font-bold text-primary">{stats.data.estimated1RM}<span className="text-2xl font-medium"> kg</span></p>
                                 </div>
                                 <div className="text-center text-xs text-light-text-secondary dark:text-dark-text-secondary -mt-2 mb-2 px-4">
@@ -257,6 +243,56 @@ const ExerciseInfoModal: React.FC<ExerciseInfoModalProps> = ({ exercise, onClose
                                 <div className="text-center bg-light-bg dark:bg-dark-bg p-4 rounded-lg">
                                     <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary">Baseado no registro de</p>
                                     <p className="text-2xl font-bold text-secondary">{stats.data.set.weight}kg <span className="font-normal">para</span> {stats.data.set.reps} reps</p>
+                                </div>
+                                <div className="mt-6 border-t border-light-border dark:border-dark-border pt-4">
+                                    <h4 className="text-md font-semibold text-light-text dark:text-dark-text mb-3 text-center">Estimativa de Repetições vs. Carga</h4>
+                                    
+                                    {resistanceStats.fullHistory && resistanceStats.fullHistory.length > 0 && (
+                                        <div className="mb-4">
+                                            <label htmlFor="1rm-selector" className="block text-sm font-medium mb-1">Basear estimativa no 1RM de:</label>
+                                            <select
+                                                id="1rm-selector"
+                                                value={selected1RMForTable ?? ''}
+                                                onChange={(e) => setSelected1RMForTable(Number(e.target.value))}
+                                                className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2"
+                                            >
+                                                <option value={stats.data.estimated1RM}>
+                                                    Maior Registrado: {stats.data.estimated1RM} kg
+                                                </option>
+                                                {resistanceStats.fullHistory.slice().reverse().map((record, index) => (
+                                                    <option key={`${record.date}-${index}`} value={record.value}>
+                                                        {record.label}: {record.value} kg
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    )}
+
+                                    {selected1RMForTable && (
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-sm text-left text-light-text-secondary dark:text-dark-text-secondary">
+                                                <thead className="text-xs text-light-text dark:text-dark-text uppercase bg-light-bg dark:bg-dark-bg">
+                                                    <tr>
+                                                        <th scope="col" className="px-4 py-2">% 1RM</th>
+                                                        <th scope="col" className="px-4 py-2">Carga (kg)</th>
+                                                        <th scope="col" className="px-4 py-2">Repetições Permitidas</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {repEstimationTableData.map(row => {
+                                                        const calculatedLoad = (row.percentage / 100) * selected1RMForTable;
+                                                        return (
+                                                            <tr key={row.percentage} className="border-b border-light-border dark:border-dark-border last:border-b-0">
+                                                                <td className="px-4 py-2 font-medium text-light-text dark:text-dark-text">{row.percentage}%</td>
+                                                                <td className="px-4 py-2">{calculatedLoad.toFixed(1)}</td>
+                                                                <td className="px-4 py-2">{row.reps}</td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
                                 </div>
                             </>
                         ) : stats?.type === 'resisted' && stats.data ? (
@@ -299,42 +335,6 @@ const ExerciseInfoModal: React.FC<ExerciseInfoModalProps> = ({ exercise, onClose
                             </div>
                         )}
                     </div>
-                    
-                    {isResistedExercise && resistanceStats.fullHistory.length > 0 && (
-                        <div className="border-t border-light-border dark:border-dark-border pt-4">
-                            <h4 className="text-lg font-semibold text-light-text dark:text-dark-text mb-4 text-center">Evolução do 1RM Estimado</h4>
-                            
-                             <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-4 px-4">
-                                <div>
-                                    <label htmlFor="startDate" className="block text-xs font-medium mb-1">De:</label>
-                                    <input
-                                        type="date"
-                                        id="startDate"
-                                        value={startDate}
-                                        onChange={(e) => setStartDate(e.target.value)}
-                                        className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2 text-sm"
-                                        max={endDate}
-                                    />
-                                </div>
-                                <div>
-                                    <label htmlFor="endDate" className="block text-xs font-medium mb-1">Até:</label>
-                                    <input
-                                        type="date"
-                                        id="endDate"
-                                        value={endDate}
-                                        onChange={(e) => setEndDate(e.target.value)}
-                                        className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2 text-sm"
-                                        min={startDate}
-                                        max={formatDateForInput(new Date())}
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="h-64 pl-4 pr-2">
-                                <BarChart data={filteredHistoryData} unit="kg" />
-                            </div>
-                        </div>
-                    )}
                 </div>
 
                 <div className="mt-auto pt-6 flex justify-end flex-shrink-0">

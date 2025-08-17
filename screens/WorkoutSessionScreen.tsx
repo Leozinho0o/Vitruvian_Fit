@@ -1,5 +1,3 @@
-
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp } from '../App';
 import { Exercise, WorkoutSession, LoggedExercise, WorkoutSet, MeasurementType, Unit, PerceivedExertionScale, ExerciseCategory, Evaluation } from '../types';
@@ -84,7 +82,14 @@ const WorkoutSessionScreen: React.FC = () => {
     const [isTimerEditModalOpen, setIsTimerEditModalOpen] = useState(false);
     const [infoExercise, setInfoExercise] = useState<Exercise | null>(null);
     const [draggingId, setDraggingId] = useState<string | null>(null);
+    const [dropIndicator, setDropIndicator] = useState<{targetId: string, position: 'top' | 'bottom'} | null>(null);
     
+    // Refs for auto-scrolling and reordering logic
+    const scrollContainerRef = useRef<HTMLElement>(null);
+    const scrollIntervalRef = useRef<number | null>(null);
+    const scrollDirectionRef = useRef<'up' | 'down' | null>(null);
+    const lastClientY = useRef<number>(0);
+
     const routine = useMemo(() => 
         routines.find(r => r.id === activeWorkoutSession?.routineId),
     [routines, activeWorkoutSession]);
@@ -180,31 +185,146 @@ const WorkoutSessionScreen: React.FC = () => {
         return historyMap;
     }, [activeWorkoutSession, workouts]);
 
+    const scrollLoop = () => {
+        if (scrollDirectionRef.current && scrollContainerRef.current) {
+            const container = scrollContainerRef.current;
+            const rect = container.getBoundingClientRect();
+            
+            const hotZoneHeight = 60;
+            const maxSpeed = 15;
+            const minSpeed = 1;
+
+            let speed = 0;
+            const y = lastClientY.current - rect.top;
+
+            if (scrollDirectionRef.current === 'up') {
+                // proximity is 0 at the edge of the hotzone, 1 at the very top of the container
+                const proximity = (hotZoneHeight - y) / hotZoneHeight;
+                if (proximity > 0) {
+                   // Use a CUBIC power curve for very gentle initial acceleration upwards.
+                   const additionalSpeed = (maxSpeed - minSpeed) * Math.pow(proximity, 3);
+                   speed = -(minSpeed + additionalSpeed);
+                }
+            } else if (scrollDirectionRef.current === 'down') {
+                // proximity is 0 at the edge of the hotzone, 1 at the very bottom
+                const proximity = (y - (rect.height - hotZoneHeight)) / hotZoneHeight;
+                if (proximity > 0) {
+                    // Quadratic curve works well for downward scroll.
+                    const additionalSpeed = (maxSpeed - minSpeed) * Math.pow(proximity, 2);
+                    speed = minSpeed + additionalSpeed;
+                }
+            }
+
+            if (speed !== 0) {
+                container.scrollTop += speed;
+                scrollIntervalRef.current = requestAnimationFrame(scrollLoop);
+            } else {
+                stopScrolling();
+            }
+        }
+    };
+
+    const stopScrolling = () => {
+        if (scrollIntervalRef.current) {
+            cancelAnimationFrame(scrollIntervalRef.current);
+            scrollIntervalRef.current = null;
+        }
+        scrollDirectionRef.current = null;
+    };
+    
+    const handleContainerDragOver = (e: React.DragEvent<HTMLElement>) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (!draggingId || !scrollContainerRef.current) return;
+        
+        lastClientY.current = e.clientY;
+
+        const container = scrollContainerRef.current;
+        const rect = container.getBoundingClientRect();
+        const y = e.clientY - rect.top;
+
+        const hotZoneHeight = 60;
+
+        if (y < hotZoneHeight) {
+            if (scrollDirectionRef.current !== 'up') {
+                stopScrolling();
+                scrollDirectionRef.current = 'up';
+                scrollIntervalRef.current = requestAnimationFrame(scrollLoop);
+            }
+        } else if (y > rect.height - hotZoneHeight) {
+            if (scrollDirectionRef.current !== 'down') {
+                stopScrolling();
+                scrollDirectionRef.current = 'down';
+                scrollIntervalRef.current = requestAnimationFrame(scrollLoop);
+            }
+        } else {
+            stopScrolling();
+        }
+
+        const directTarget = e.target as HTMLElement;
+        const targetElement = directTarget.closest('[data-drag-id]') as HTMLElement | null;
+
+        if (!targetElement) {
+            // If the cursor is between elements, do nothing and maintain the last indicator state.
+            return;
+        }
+
+        const targetId = targetElement.dataset.dragId;
+        if (!targetId || targetId === draggingId) {
+            // Dragging over itself, do nothing.
+            return;
+        }
+
+        const targetRect = targetElement.getBoundingClientRect();
+        const midpointY = targetRect.top + targetRect.height / 2;
+        const position = e.clientY < midpointY ? 'top' : 'bottom';
+
+        if (dropIndicator?.targetId !== targetId || dropIndicator?.position !== position) {
+            setDropIndicator({ targetId, position });
+        }
+    };
+
+    const handleDrop = (e: React.DragEvent<HTMLElement>) => {
+        e.preventDefault();
+        if (!draggingId || !dropIndicator) {
+            handleDragEnd();
+            return;
+        }
+
+        const { targetId, position } = dropIndicator;
+        
+        setLoggedExercises(prev => {
+            const draggedItem = prev.find(p => p.tempId === draggingId);
+            if (!draggedItem) return prev;
+
+            const items = prev.filter(p => p.tempId !== draggingId);
+            
+            let targetIndex = items.findIndex(p => p.tempId === targetId);
+            if (targetIndex === -1) return prev;
+            
+            if (position === 'bottom') {
+                targetIndex++;
+            }
+            
+            items.splice(targetIndex, 0, draggedItem);
+
+            return items;
+        });
+
+        handleDragEnd();
+    };
+
+
     const handleDragStart = (e: React.DragEvent, tempId: string) => {
         setDraggingId(tempId);
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', tempId);
     };
 
-    const handleDragEnter = (e: React.DragEvent, targetId: string) => {
-        if (draggingId === null || draggingId === targetId) {
-            return;
-        }
-        setLoggedExercises(prev => {
-            const newLogs = [...prev];
-            const draggingIndex = newLogs.findIndex(ex => ex.tempId === draggingId);
-            const targetIndex = newLogs.findIndex(ex => ex.tempId === targetId);
-            
-            if (draggingIndex === -1 || targetIndex === -1) return prev;
-
-            const [draggedItem] = newLogs.splice(draggingIndex, 1);
-            newLogs.splice(targetIndex, 0, draggedItem);
-            return newLogs;
-        });
-    };
-
     const handleDragEnd = () => {
+        stopScrolling();
         setDraggingId(null);
+        setDropIndicator(null);
     };
 
     if (!activeWorkoutSession || !routine) {
@@ -460,7 +580,12 @@ const WorkoutSessionScreen: React.FC = () => {
                     Cancelar
                 </button>
             </header>
-            <main className="flex-grow overflow-y-auto p-4 space-y-4">
+            <main
+                ref={scrollContainerRef}
+                onDragOver={handleContainerDragOver}
+                onDrop={handleDrop}
+                className="flex-grow overflow-y-auto p-4 space-y-4"
+            >
                 {routine.notes && (
                     <div className="bg-light-card dark:bg-dark-card p-3 rounded-lg border-l-4" style={{borderColor: routine.color}}>
                         <h3 className="text-md font-semibold text-light-text dark:text-dark-text mb-1">Anotações da Rotina</h3>
@@ -476,218 +601,224 @@ const WorkoutSessionScreen: React.FC = () => {
                     const exerciseSets = loggedEx.sets || [];
                     const setsToRender = exerciseSets.length > 0 ? exerciseSets : [{}];
                     return (
-                        <div
-                            key={loggedEx.tempId}
-                            draggable
-                            onDragStart={(e) => handleDragStart(e, loggedEx.tempId)}
-                            onDragEnter={(e) => handleDragEnter(e, loggedEx.tempId)}
-                            onDragEnd={handleDragEnd}
-                            onDragOver={(e) => e.preventDefault()}
-                            className={`bg-light-card dark:bg-dark-card p-4 rounded-lg space-y-4 cursor-grab transition-opacity ${draggingId === loggedEx.tempId ? 'opacity-40' : 'opacity-100'}`}
-                        >
-                            <div className="flex justify-between items-center">
-                                <div className="flex items-center gap-2">
-                                    <GripVerticalIcon className="h-5 w-5 text-light-text-secondary dark:text-dark-text-secondary flex-shrink-0" />
-                                    <div className="w-12 h-12 bg-light-bg dark:bg-dark-bg rounded-md flex-shrink-0 flex items-center justify-center">
-                                        {exercise.imageUrl ? (
-                                            <img
-                                                src={exercise.imageUrl}
-                                                alt={exercise.name}
-                                                className="w-full h-full object-cover rounded-md"
-                                                loading="lazy"
-                                            />
-                                        ) : (
-                                            <DumbbellIcon className="h-6 w-6 text-light-text-secondary dark:text-dark-text-secondary" />
-                                        )}
+                        <React.Fragment key={loggedEx.tempId}>
+                            {dropIndicator?.targetId === loggedEx.tempId && dropIndicator.position === 'top' && (
+                                <div className="h-1.5 bg-secondary rounded-full my-1"></div>
+                            )}
+                            <div
+                                data-drag-id={loggedEx.tempId}
+                                draggable
+                                onDragStart={(e) => handleDragStart(e, loggedEx.tempId)}
+                                onDragEnd={handleDragEnd}
+                                className={`bg-light-card dark:bg-dark-card p-4 rounded-lg space-y-4 cursor-grab transition-opacity ${draggingId === loggedEx.tempId ? 'opacity-40' : 'opacity-100'}`}
+                            >
+                                <div className="flex justify-between items-center">
+                                    <div className="flex items-center gap-2">
+                                        <GripVerticalIcon className="h-5 w-5 text-light-text-secondary dark:text-dark-text-secondary flex-shrink-0" />
+                                        <div className="w-12 h-12 bg-light-bg dark:bg-dark-bg rounded-md flex-shrink-0 flex items-center justify-center">
+                                            {exercise.imageUrl ? (
+                                                <img
+                                                    src={exercise.imageUrl}
+                                                    alt={exercise.name}
+                                                    className="w-full h-full object-cover rounded-md"
+                                                    loading="lazy"
+                                                />
+                                            ) : (
+                                                <DumbbellIcon className="h-6 w-6 text-light-text-secondary dark:text-dark-text-secondary" />
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <h3 className="text-lg font-semibold text-light-text dark:text-dark-text">{exercise.name}</h3>
+                                            {exercise.isCounterweight && (
+                                                <span className="text-xs bg-gray-200 dark:bg-gray-700 text-light-text-secondary dark:text-dark-text-secondary px-2 py-0.5 rounded-full whitespace-nowrap">
+                                                    Contrapeso
+                                                </span>
+                                            )}
+                                            {exercise.includeBarbellWeight && (
+                                                <span className="text-xs bg-gray-200 dark:bg-gray-700 text-light-text-secondary dark:text-dark-text-secondary px-2 py-0.5 rounded-full whitespace-nowrap">
+                                                    Peso da Barra
+                                                </span>
+                                            )}
+                                            {exercise.isWeightDoubled && (
+                                                <span className="text-xs bg-gray-200 dark:bg-gray-700 text-light-text-secondary dark:text-dark-text-secondary px-2 py-0.5 rounded-full whitespace-nowrap">
+                                                    Peso 2x
+                                                </span>
+                                            )}
+                                        </div>
+                                        <button type="button" onClick={() => setInfoExercise(exercise)} className="p-1 flex items-center justify-center text-light-text-secondary dark:text-dark-text-secondary hover:text-blue-500" aria-label={`Informações sobre ${exercise.name}`}>
+                                            <InfoIcon className="h-5 w-5" />
+                                        </button>
                                     </div>
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                        <h3 className="text-lg font-semibold text-light-text dark:text-dark-text">{exercise.name}</h3>
-                                        {exercise.isCounterweight && (
-                                            <span className="text-xs bg-gray-200 dark:bg-gray-700 text-light-text-secondary dark:text-dark-text-secondary px-2 py-0.5 rounded-full whitespace-nowrap">
-                                                Contrapeso
-                                            </span>
-                                        )}
-                                        {exercise.includeBarbellWeight && (
-                                            <span className="text-xs bg-gray-200 dark:bg-gray-700 text-light-text-secondary dark:text-dark-text-secondary px-2 py-0.5 rounded-full whitespace-nowrap">
-                                                Peso da Barra
-                                            </span>
-                                        )}
-                                        {exercise.isWeightDoubled && (
-                                            <span className="text-xs bg-gray-200 dark:bg-gray-700 text-light-text-secondary dark:text-dark-text-secondary px-2 py-0.5 rounded-full whitespace-nowrap">
-                                                Peso 2x
-                                            </span>
-                                        )}
-                                    </div>
-                                    <button type="button" onClick={() => setInfoExercise(exercise)} className="p-1 flex items-center justify-center text-light-text-secondary dark:text-dark-text-secondary hover:text-blue-500" aria-label={`Informações sobre ${exercise.name}`}>
-                                        <InfoIcon className="h-5 w-5" />
+                                    <button type="button" onClick={() => handleRemoveExercise(loggedEx.tempId)} className="p-1 flex items-center justify-center text-light-text-secondary dark:text-dark-text-secondary hover:text-red-500" aria-label={`Remover ${exercise.name} do treino`}>
+                                        <TrashIcon className="h-5 w-5" />
                                     </button>
                                 </div>
-                                <button type="button" onClick={() => handleRemoveExercise(loggedEx.tempId)} className="p-1 flex items-center justify-center text-light-text-secondary dark:text-dark-text-secondary hover:text-red-500" aria-label={`Remover ${exercise.name} do treino`}>
-                                    <TrashIcon className="h-5 w-5" />
-                                </button>
-                            </div>
-                            
-                            <textarea
-                                value={loggedEx.notes || ''}
-                                onChange={(e) => handleExerciseNoteChange(loggedEx.tempId, e.target.value)}
-                                placeholder="Anotações do treino para este exercício..."
-                                rows={2}
-                                className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2 text-sm"
-                            />
+                                
+                                <textarea
+                                    value={loggedEx.notes || ''}
+                                    onChange={(e) => handleExerciseNoteChange(loggedEx.tempId, e.target.value)}
+                                    placeholder="Anotações do treino para este exercício..."
+                                    rows={2}
+                                    className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2 text-sm"
+                                />
 
-                            {exercise.includeBarbellWeight && (
-                                <div className="mt-3">
-                                    <label htmlFor={`barbell-${loggedEx.tempId}`} className="block text-sm font-medium mb-1">Peso da Barra (kg)</label>
-                                    <input
-                                        type="number"
-                                        id={`barbell-${loggedEx.tempId}`}
-                                        inputMode="decimal"
-                                        step="any"
-                                        value={loggedEx.barbellWeight ?? ''}
-                                        placeholder={(originalPlanRef.current[exIndex]?.barbellWeight ?? '').toString()}
-                                        onChange={(e) => handleBarbellWeightChange(loggedEx.tempId, e.target.value)}
-                                        className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2"
-                                    />
-                                </div>
-                            )}
-                            
-                            <div className="space-y-3">
-                                {setsToRender.map((set, setIndex) => {
-                                    const originalSet = originalPlanRef.current[exIndex]?.sets[setIndex] || {};
-                                    const isCountType = exercise.measurementType === MeasurementType.COUNT;
-                                    
-                                    let repsTimePlaceholder = '';
-                                    if (isCountType) {
-                                        const plannedSingleRep = activeWorkoutSession?.completed ? set.reps : originalSet.reps;
-                                        repsTimePlaceholder = (originalSet.repsMin !== undefined || originalSet.repsMax !== undefined)
-                                            ? `${originalSet.repsMin ?? ''}-${originalSet.repsMax ?? ''}`
-                                            : plannedSingleRep?.toString() ?? '';
-                                    } else {
-                                        const plannedTime = activeWorkoutSession?.completed ? set.time : originalSet.time;
-                                        repsTimePlaceholder = formatSecondsToMMSS(plannedTime) || "MM:SS";
-                                    }
-                                    
-                                    const valueFromPlan = activeWorkoutSession?.completed ? set.value : originalSet.value;
-                                    const valuePlaceholder = valueFromPlan?.toString() ?? '';
-                                    const effortFromPlan = activeWorkoutSession?.completed ? set.effort : originalSet.effort;
-
-                                    const lastSetData = lastLoggedExercise?.sets[setIndex];
-                                    let lastSetString = '';
-                                    if (lastSetData && !activeWorkoutSession.completed) {
-                                        const parts = [];
-                                        if (exercise.category === ExerciseCategory.RESISTED) {
-                                            if (lastSetData.reps !== undefined) parts.push(`${lastSetData.reps} reps`);
-                                            if (lastSetData.value !== undefined && exercise.unit === Unit.KG) parts.push(`${lastSetData.value}kg`);
-                                            else if (lastSetData.value !== undefined && exercise.unit !== Unit.NONE) parts.push(`${lastSetData.value} ${exercise.unit}`);
-                                            if (lastSetData.effort) parts.push(`PSE ${lastSetData.effort}`);
-                                            if (parts.length > 0) lastSetString = `Último: ${parts.join(' x ')}`;
-                                        } else if (exercise.category === ExerciseCategory.FLEXIBILITY) {
-                                            if (exercise.measurementType === MeasurementType.TIME) {
-                                                if (lastSetData.time !== undefined) parts.push(formatSecondsToMMSS(lastSetData.time));
-                                            } else {
-                                                if (lastSetData.reps !== undefined) parts.push(`${lastSetData.reps} reps`);
-                                            }
-                                            if (lastSetData.effort) parts.push(`PSE ${lastSetData.effort}`);
-                                            if (parts.length > 0) lastSetString = `Último: ${parts.join(' x ')}`;
+                                {exercise.includeBarbellWeight && (
+                                    <div className="mt-3">
+                                        <label htmlFor={`barbell-${loggedEx.tempId}`} className="block text-sm font-medium mb-1">Peso da Barra (kg)</label>
+                                        <input
+                                            type="number"
+                                            id={`barbell-${loggedEx.tempId}`}
+                                            inputMode="decimal"
+                                            step="any"
+                                            value={loggedEx.barbellWeight ?? ''}
+                                            placeholder={(originalPlanRef.current[exIndex]?.barbellWeight ?? '').toString()}
+                                            onChange={(e) => handleBarbellWeightChange(loggedEx.tempId, e.target.value)}
+                                            className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2"
+                                        />
+                                    </div>
+                                )}
+                                
+                                <div className="space-y-3">
+                                    {setsToRender.map((set, setIndex) => {
+                                        const originalSet = originalPlanRef.current[exIndex]?.sets[setIndex] || {};
+                                        const isCountType = exercise.measurementType === MeasurementType.COUNT;
+                                        
+                                        let repsTimePlaceholder = '';
+                                        if (isCountType) {
+                                            const plannedSingleRep = activeWorkoutSession?.completed ? set.reps : originalSet.reps;
+                                            repsTimePlaceholder = (originalSet.repsMin !== undefined || originalSet.repsMax !== undefined)
+                                                ? `${originalSet.repsMin ?? ''}-${originalSet.repsMax ?? ''}`
+                                                : plannedSingleRep?.toString() ?? '';
+                                        } else {
+                                            const plannedTime = activeWorkoutSession?.completed ? set.time : originalSet.time;
+                                            repsTimePlaceholder = formatSecondsToMMSS(plannedTime) || "MM:SS";
                                         }
-                                    }
-                                    
-                                    return (
-                                        <div key={setIndex} className={`bg-light-bg dark:bg-dark-bg p-3 rounded-lg space-y-3 transition-opacity ${set.completed ? 'opacity-50' : ''}`}>
-                                            <div className="flex justify-between items-center">
-                                                <div className="flex items-center gap-3 cursor-pointer" onClick={() => handleToggleSetComplete(loggedEx.tempId, setIndex)}>
-                                                     <input 
-                                                        type="checkbox"
-                                                        aria-label={`Marcar série ${setIndex + 1} como completa`}
-                                                        checked={!!set.completed}
-                                                        readOnly
-                                                        className="h-5 w-5 rounded text-secondary bg-light-bg dark:bg-dark-bg border-light-border dark:border-dark-border focus:ring-secondary focus:ring-2 cursor-pointer"
-                                                    />
-                                                     <span className={`font-bold text-lg text-light-text dark:text-dark-text ${set.completed ? 'line-through' : ''}`}>Série {setIndex + 1}</span>
-                                                </div>
-                                                <button onClick={() => handleDeleteSet(loggedEx.tempId, setIndex)} className="p-2 flex items-center justify-center text-light-text-secondary dark:text-dark-text-secondary hover:text-red-500" aria-label={`Deletar série ${setIndex + 1}`}>
-                                                    <TrashIcon className="h-5 w-5" />
-                                                </button>
-                                            </div>
+                                        
+                                        const valueFromPlan = activeWorkoutSession?.completed ? set.value : originalSet.value;
+                                        const valuePlaceholder = valueFromPlan?.toString() ?? '';
+                                        const effortFromPlan = activeWorkoutSession?.completed ? set.effort : originalSet.effort;
 
-                                            {lastSetString && (
-                                                <div className="w-full text-center text-xs text-secondary dark:text-pink-400" aria-label={`Dados da última vez: ${lastSetString}`}>
-                                                    {lastSetString}
-                                                </div>
-                                            )}
-
-                                            <div className="flex flex-wrap gap-4">
-                                                <div className="flex-1 min-w-[100px]">
-                                                    <label className="block text-xs font-medium mb-1 text-light-text-secondary dark:text-dark-text-secondary">{isCountType ? 'Repetições' : 'Tempo'}</label>
-                                                    {isCountType ? (
-                                                        <input 
-                                                            type="number" 
-                                                            inputMode="numeric"
-                                                            aria-label={`Repetições para série ${setIndex + 1}`}
-                                                            placeholder={repsTimePlaceholder}
-                                                            value={set.reps ?? ''}
-                                                            onFocus={(e) => e.target.select()}
-                                                            onChange={e => handleSetChange(loggedEx.tempId, setIndex, 'reps', e.target.value)}
-                                                            className={`w-full bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-2 text-center text-light-text dark:text-dark-text transition-colors duration-300 ${set.completed ? 'line-through' : ''}`}
-                                                        />
-                                                    ) : (
-                                                        <TimeInput
-                                                            id={`session-time-input-${loggedEx.tempId}-${setIndex}`}
-                                                            valueInSeconds={set.time}
-                                                            onChangeInSeconds={(seconds) => {
-                                                                setLoggedExercises(currentLogs => currentLogs.map(log => {
-                                                                    if (log.tempId !== loggedEx.tempId) return log;
-                                                                    const newSets = [...log.sets];
-                                                                    const updatedSet = { ...(newSets[setIndex] || {}) };
-                                                                    updatedSet.time = seconds;
-                                                                    newSets[setIndex] = updatedSet;
-                                                                    return { ...log, sets: newSets };
-                                                                }));
-                                                            }}
-                                                            placeholder={repsTimePlaceholder}
-                                                            className={`w-full bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-2 text-center text-light-text dark:text-dark-text transition-colors duration-300 ${set.completed ? 'line-through' : ''}`}
-                                                        />
-                                                    )}
-                                                </div>
-                                                {exercise.unit !== Unit.NONE &&
-                                                    <div className="flex-1 min-w-[100px]">
-                                                        <label className="block text-xs font-medium mb-1 text-light-text-secondary dark:text-dark-text-secondary">{exercise.unit}</label>
-                                                        <input 
-                                                            type="number" 
-                                                            aria-label={`Peso para série ${setIndex + 1}`}
-                                                            placeholder={valuePlaceholder}
-                                                            value={set.value ?? ''}
-                                                            onFocus={(e) => e.target.select()}
-                                                            onChange={e => handleSetChange(loggedEx.tempId, setIndex, 'value', e.target.value)}
-                                                            className={`w-full bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-2 text-center text-light-text dark:text-dark-text transition-colors duration-300 ${set.completed ? 'line-through' : ''}`}
-                                                        />
-                                                    </div>
+                                        const lastSetData = lastLoggedExercise?.sets[setIndex];
+                                        let lastSetString = '';
+                                        if (lastSetData && !activeWorkoutSession.completed) {
+                                            const parts = [];
+                                            if (exercise.category === ExerciseCategory.RESISTED) {
+                                                if (lastSetData.reps !== undefined) parts.push(`${lastSetData.reps} reps`);
+                                                if (lastSetData.value !== undefined && exercise.unit === Unit.KG) parts.push(`${lastSetData.value}kg`);
+                                                else if (lastSetData.value !== undefined && exercise.unit !== Unit.NONE) parts.push(`${lastSetData.value} ${exercise.unit}`);
+                                                if (lastSetData.effort) parts.push(`PSE ${lastSetData.effort}`);
+                                                if (parts.length > 0) lastSetString = `Último: ${parts.join(' x ')}`;
+                                            } else if (exercise.category === ExerciseCategory.FLEXIBILITY) {
+                                                if (exercise.measurementType === MeasurementType.TIME) {
+                                                    if (lastSetData.time !== undefined) parts.push(formatSecondsToMMSS(lastSetData.time));
+                                                } else {
+                                                    if (lastSetData.reps !== undefined) parts.push(`${lastSetData.reps} reps`);
                                                 }
-                                                 {scaleOptions && (
-                                                    <div className="flex-1 min-w-[120px]">
-                                                        <label className="block text-xs font-medium mb-1 text-light-text-secondary dark:text-dark-text-secondary">Esforço</label>
-                                                        <div className="h-10">
-                                                            <EffortPicker
-                                                                value={set.effort}
-                                                                onChange={(val) => handleSetChange(loggedEx.tempId, setIndex, 'effort', val === undefined ? '' : val)}
-                                                                options={scaleOptions}
-                                                                placeholder={effortFromPlan ? `Sug: ${effortFromPlan}` : 'Selecionar...'}
-                                                                disabled={!!set.completed}
-                                                            />
-                                                        </div>
+                                                if (lastSetData.effort) parts.push(`PSE ${lastSetData.effort}`);
+                                                if (parts.length > 0) lastSetString = `Último: ${parts.join(' x ')}`;
+                                            }
+                                        }
+                                        
+                                        return (
+                                            <div key={setIndex} className={`bg-light-bg dark:bg-dark-bg p-3 rounded-lg space-y-3 transition-opacity ${set.completed ? 'opacity-50' : ''}`}>
+                                                <div className="flex justify-between items-center">
+                                                    <div className="flex items-center gap-3 cursor-pointer" onClick={() => handleToggleSetComplete(loggedEx.tempId, setIndex)}>
+                                                         <input 
+                                                            type="checkbox"
+                                                            aria-label={`Marcar série ${setIndex + 1} como completa`}
+                                                            checked={!!set.completed}
+                                                            readOnly
+                                                            className="h-5 w-5 rounded text-secondary bg-light-bg dark:bg-dark-bg border-light-border dark:border-dark-border focus:ring-secondary focus:ring-2 cursor-pointer"
+                                                        />
+                                                         <span className={`font-bold text-lg text-light-text dark:text-dark-text ${set.completed ? 'line-through' : ''}`}>Série {setIndex + 1}</span>
+                                                    </div>
+                                                    <button onClick={() => handleDeleteSet(loggedEx.tempId, setIndex)} className="p-2 flex items-center justify-center text-light-text-secondary dark:text-dark-text-secondary hover:text-red-500" aria-label={`Deletar série ${setIndex + 1}`}>
+                                                        <TrashIcon className="h-5 w-5" />
+                                                    </button>
+                                                </div>
+
+                                                {lastSetString && (
+                                                    <div className="w-full text-center text-xs text-secondary dark:text-pink-400" aria-label={`Dados da última vez: ${lastSetString}`}>
+                                                        {lastSetString}
                                                     </div>
                                                 )}
+
+                                                <div className="flex flex-wrap gap-4">
+                                                    <div className="flex-1 min-w-[100px]">
+                                                        <label className="block text-xs font-medium mb-1 text-light-text-secondary dark:text-dark-text-secondary">{isCountType ? 'Repetições' : 'Tempo'}</label>
+                                                        {isCountType ? (
+                                                            <input 
+                                                                type="number" 
+                                                                inputMode="numeric"
+                                                                aria-label={`Repetições para série ${setIndex + 1}`}
+                                                                placeholder={repsTimePlaceholder}
+                                                                value={set.reps ?? ''}
+                                                                onFocus={(e) => e.target.select()}
+                                                                onChange={e => handleSetChange(loggedEx.tempId, setIndex, 'reps', e.target.value)}
+                                                                className={`w-full bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-2 text-center text-light-text dark:text-dark-text transition-colors duration-300 ${set.completed ? 'line-through' : ''}`}
+                                                            />
+                                                        ) : (
+                                                            <TimeInput
+                                                                id={`session-time-input-${loggedEx.tempId}-${setIndex}`}
+                                                                valueInSeconds={set.time}
+                                                                onChangeInSeconds={(seconds) => {
+                                                                    setLoggedExercises(currentLogs => currentLogs.map(log => {
+                                                                        if (log.tempId !== loggedEx.tempId) return log;
+                                                                        const newSets = [...log.sets];
+                                                                        const updatedSet = { ...(newSets[setIndex] || {}) };
+                                                                        updatedSet.time = seconds;
+                                                                        newSets[setIndex] = updatedSet;
+                                                                        return { ...log, sets: newSets };
+                                                                    }));
+                                                                }}
+                                                                placeholder={repsTimePlaceholder}
+                                                                className={`w-full bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-2 text-center text-light-text dark:text-dark-text transition-colors duration-300 ${set.completed ? 'line-through' : ''}`}
+                                                            />
+                                                        )}
+                                                    </div>
+                                                    {exercise.unit !== Unit.NONE &&
+                                                        <div className="flex-1 min-w-[100px]">
+                                                            <label className="block text-xs font-medium mb-1 text-light-text-secondary dark:text-dark-text-secondary">{exercise.unit}</label>
+                                                            <input 
+                                                                type="number" 
+                                                                aria-label={`Peso para série ${setIndex + 1}`}
+                                                                placeholder={valuePlaceholder}
+                                                                value={set.value ?? ''}
+                                                                onFocus={(e) => e.target.select()}
+                                                                onChange={e => handleSetChange(loggedEx.tempId, setIndex, 'value', e.target.value)}
+                                                                className={`w-full bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-2 text-center text-light-text dark:text-dark-text transition-colors duration-300 ${set.completed ? 'line-through' : ''}`}
+                                                            />
+                                                        </div>
+                                                    }
+                                                     {scaleOptions && (
+                                                        <div className="flex-1 min-w-[120px]">
+                                                            <label className="block text-xs font-medium mb-1 text-light-text-secondary dark:text-dark-text-secondary">Esforço</label>
+                                                            <div className="h-10">
+                                                                <EffortPicker
+                                                                    value={set.effort}
+                                                                    onChange={(val) => handleSetChange(loggedEx.tempId, setIndex, 'effort', val === undefined ? '' : val)}
+                                                                    options={scaleOptions}
+                                                                    placeholder={effortFromPlan ? `Sug: ${effortFromPlan}` : 'Selecionar...'}
+                                                                    disabled={!!set.completed}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
-                                        </div>
-                                    )
-                                })}
+                                        )
+                                    })}
+                                </div>
+                                
+                                <button onClick={() => handleAddSet(loggedEx.tempId)} className="w-full mt-2 bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-md flex items-center justify-center text-sm">
+                                    <PlusIcon className="h-5 w-5 mr-2" />
+                                    Adicionar Série
+                                </button>
                             </div>
-                            
-                            <button onClick={() => handleAddSet(loggedEx.tempId)} className="w-full mt-2 bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-md flex items-center justify-center text-sm">
-                                <PlusIcon className="h-5 w-5 mr-2" />
-                                Adicionar Série
-                            </button>
-                        </div>
+                            {dropIndicator?.targetId === loggedEx.tempId && dropIndicator.position === 'bottom' && (
+                                <div className="h-1.5 bg-secondary rounded-full my-1"></div>
+                            )}
+                        </React.Fragment>
                     );
                 })}
                  <button 
