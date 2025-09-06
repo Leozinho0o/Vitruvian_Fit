@@ -1,7 +1,5 @@
-
-
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { View, Exercise, Routine, Folder, WorkoutSession, Theme, UserMeasurements, Evaluation } from './types';
+import { View, Exercise, Routine, Folder, WorkoutSession, Theme, UserMeasurements, Evaluation, PlannedExercise, WorkoutSet } from './types';
 import { INITIAL_EXERCISES, INITIAL_ROUTINES, INITIAL_FOLDERS, DEFAULT_MUSCLE_GROUPS } from './constants';
 import RoutinesScreen from './screens/RoutinesScreen';
 import CalendarScreen from './screens/CalendarScreen';
@@ -73,8 +71,9 @@ const App: React.FC = () => {
     // Theme state
     const [theme, setTheme] = useLocalStorage<Theme>('vitruvian_fit_theme', Theme.SYSTEM);
 
-    // Active workout state
-    const [activeWorkoutSession, setActiveWorkoutSession] = useState<WorkoutSession | null>(null);
+    // Active workout state - now persisted to localStorage
+    const [activeWorkoutSession, setActiveWorkoutSession] = useLocalStorage<WorkoutSession | null>('vitruvian_fit_active_workout', null);
+
     const [editingExercise, setEditingExercise] = useState<Exercise | 'new' | null>(null);
     const [isMeasurementsScreenOpen, setIsMeasurementsScreenOpen] = useState(false);
     const [isMuscleGroupsScreenOpen, setIsMuscleGroupsScreenOpen] = useState(false);
@@ -307,7 +306,7 @@ const App: React.FC = () => {
     const updateWorkout = useCallback((updatedWorkout: WorkoutSession) => {
         setWorkouts(prevWorkouts => prevWorkouts.map(w => w.id === updatedWorkout.id ? updatedWorkout : w));
         setActiveWorkoutSession(null); // After updating, close the session screen
-    }, [setWorkouts]);
+    }, [setWorkouts, setActiveWorkoutSession]);
 
     const deleteWorkout = useCallback((sessionId: string) => {
         setWorkouts(prev => prev.filter(w => w.id !== sessionId));
@@ -320,7 +319,6 @@ const App: React.FC = () => {
             return;
         }
 
-        // Check for counterweight exercises and missing body mass
         const hasCounterweightExercise = routine.plannedExercises.some(pe => {
             const exercise = exercises.find(e => e.id === pe.exerciseId);
             return exercise?.isCounterweight;
@@ -340,20 +338,36 @@ const App: React.FC = () => {
                     setIsPhysicalEvaluationScreenOpen(true);
                 }
             });
-            return; // Stop the workout from starting
+            return;
         }
 
+        const originalPlan = JSON.parse(JSON.stringify(routine.plannedExercises || []));
+
         const newSession: WorkoutSession = {
-            id: `ws_temp_${Date.now()}`, // Temporary ID to indicate it's a new, unsaved session
+            id: `ws_temp_${Date.now()}`,
             routineId: routine.id,
             date: new Date().toISOString().split('T')[0],
             startTime: new Date().toISOString(),
             endTime: null,
-            loggedExercises: JSON.parse(JSON.stringify(routine.plannedExercises || [])),
+            originalPlan: originalPlan,
+            loggedExercises: originalPlan.map((plannedEx: PlannedExercise, index: number) => ({
+                ...plannedEx,
+                sets: plannedEx.sets.map((set: WorkoutSet) => ({
+                    // Keep planned values for reference in placeholders
+                    repsMin: set.repsMin,
+                    repsMax: set.repsMax,
+                    // These fields start empty for user input
+                    reps: undefined,
+                    time: undefined,
+                    value: undefined,
+                    effort: undefined,
+                    completed: false,
+                })),
+                tempId: `le-${Date.now()}-${index}`
+            })),
             completed: false,
         };
-
-        // Do NOT add to the main workouts list yet. It will be added only when 'Finish Workout' is clicked.
+        
         setActiveWorkoutSession(newSession);
     }, [routines, exercises, evaluations, setActiveWorkoutSession, setActiveView, setIsPhysicalEvaluationScreenOpen]);
 

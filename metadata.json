@@ -1,6 +1,6 @@
 {
-  "name": "Copy of Vitruvian Fit - Correções 5",
-  "description": "Adição de elementos visuais ao arrastar e soltar",
+  "name": "Vitruvian Fit - Correções 6",
+  "description": "Tentativa de manter dados quando o app fecha",
   "requestFramePermissions": [],
   "prompt": ""
 }

@@ -1,6 +1,4 @@
 
-
-
 export interface Evaluation {
   date: string; // YYYY-MM-DD
   measurements: UserMeasurements;
@@ -118,6 +116,7 @@ export interface LoggedExercise {
   sets: WorkoutSet[];
   notes?: string;
   barbellWeight?: number;
+  tempId?: string;
 }
 
 export interface WorkoutSession {
@@ -129,6 +128,7 @@ export interface WorkoutSession {
   loggedExercises: LoggedExercise[];
   completed?: boolean;
   duration?: number; // Duration in seconds
+  originalPlan?: PlannedExercise[];
 }
 
 export enum View {

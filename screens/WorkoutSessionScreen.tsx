@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp } from '../App';
-import { Exercise, WorkoutSession, LoggedExercise, WorkoutSet, MeasurementType, Unit, PerceivedExertionScale, ExerciseCategory, Evaluation } from '../types';
+import { Exercise, WorkoutSession, LoggedExercise, WorkoutSet, MeasurementType, Unit, PerceivedExertionScale, ExerciseCategory, Evaluation, PlannedExercise } from '../types';
 import { ChevronLeftIcon, PlusIcon, TrashIcon, XIcon, CheckCircleIcon, ChevronDownIcon, DumbbellIcon, InfoIcon, GripVerticalIcon, SearchIcon } from '../components/Icons';
 import { getScaleOptions } from '../constants';
 import ConfirmationModal from '../components/ConfirmationModal';
@@ -55,9 +55,6 @@ const TimeInput: React.FC<TimeInputProps> = ({ id, valueInSeconds, onChangeInSec
 };
 
 
-// Add a temporary ID to each logged exercise for stable keys and state updates
-type TempLoggedExercise = LoggedExercise & { tempId: string };
-
 const WorkoutSessionScreen: React.FC = () => {
     const { 
         activeWorkoutSession, 
@@ -73,10 +70,7 @@ const WorkoutSessionScreen: React.FC = () => {
         setIsPhysicalEvaluationScreenOpen
     } = useApp();
     
-    // Store the original plan in a ref to use for placeholders. It's stable across re-renders.
-    const originalPlanRef = useRef(
-        (activeWorkoutSession?.loggedExercises || []).map(ex => ({ ...ex }))
-    );
+    const originalPlanRef = useRef(activeWorkoutSession?.originalPlan || []);
     
     const [now, setNow] = useState(() => Date.now());
     const [isTimerEditModalOpen, setIsTimerEditModalOpen] = useState(false);
@@ -84,11 +78,12 @@ const WorkoutSessionScreen: React.FC = () => {
     const [draggingId, setDraggingId] = useState<string | null>(null);
     const [dropIndicator, setDropIndicator] = useState<{targetId: string, position: 'top' | 'bottom'} | null>(null);
     
-    // Refs for auto-scrolling and reordering logic
     const scrollContainerRef = useRef<HTMLElement>(null);
     const scrollIntervalRef = useRef<number | null>(null);
     const scrollDirectionRef = useRef<'up' | 'down' | null>(null);
     const lastClientY = useRef<number>(0);
+    const [isExercisePickerOpen, setIsExercisePickerOpen] = useState(false);
+    const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
 
     const routine = useMemo(() => 
         routines.find(r => r.id === activeWorkoutSession?.routineId),
@@ -97,18 +92,16 @@ const WorkoutSessionScreen: React.FC = () => {
     const elapsedTime = useMemo(() => {
         if (!activeWorkoutSession) return 0;
         
-        // If the workout is completed, show its final duration.
         if (activeWorkoutSession.completed && typeof activeWorkoutSession.duration === 'number') {
             return activeWorkoutSession.duration;
         }
 
-        // Otherwise, if it's ongoing, calculate elapsed time from its start time.
         if (activeWorkoutSession.startTime) {
             const startTimestamp = new Date(activeWorkoutSession.startTime).getTime();
             return Math.floor((now - startTimestamp) / 1000);
         }
 
-        return 0; // Fallback
+        return 0;
     }, [now, activeWorkoutSession]);
 
     useEffect(() => {
@@ -124,42 +117,6 @@ const WorkoutSessionScreen: React.FC = () => {
             clearInterval(timerId);
         };
     }, [activeWorkoutSession]);
-
-    // This function creates the initial state for the workout session.
-    // It runs only once when the component mounts.
-    const [initialLoggedExercises] = useState(() => {
-        const sourceExercises = activeWorkoutSession?.loggedExercises || [];
-        // Use a stable prefix for the tempId to ensure consistent keys.
-        const idPrefix = activeWorkoutSession?.id || `new-${Date.now()}`;
-        
-        // If editing a completed workout, use the logged data as is.
-        if (activeWorkoutSession?.completed) {
-            return sourceExercises.map((ex, index) => ({
-                ...ex,
-                tempId: `le-${idPrefix}-${index}`
-            }));
-        }
-
-        // If starting a new workout, prepare the state for logging by clearing loggable fields.
-        return sourceExercises.map((plannedEx, index) => ({
-            ...plannedEx,
-            sets: plannedEx.sets.map((set: WorkoutSet) => ({
-                repsMin: set.repsMin,
-                repsMax: set.repsMax,
-                // These fields will be filled by the user. They start empty.
-                reps: undefined,
-                time: undefined,
-                value: undefined,
-                effort: undefined,
-                completed: false,
-            })),
-            tempId: `le-${idPrefix}-${index}`
-        }));
-    });
-    
-    const [loggedExercises, setLoggedExercises] = useState<TempLoggedExercise[]>(initialLoggedExercises);
-    const [isExercisePickerOpen, setIsExercisePickerOpen] = useState(false);
-    const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
     
     const historicalData = useMemo(() => {
         if (!activeWorkoutSession) return new Map<string, LoggedExercise>();
@@ -198,18 +155,14 @@ const WorkoutSessionScreen: React.FC = () => {
             const y = lastClientY.current - rect.top;
 
             if (scrollDirectionRef.current === 'up') {
-                // proximity is 0 at the edge of the hotzone, 1 at the very top of the container
                 const proximity = (hotZoneHeight - y) / hotZoneHeight;
                 if (proximity > 0) {
-                   // Use a CUBIC power curve for very gentle initial acceleration upwards.
                    const additionalSpeed = (maxSpeed - minSpeed) * Math.pow(proximity, 3);
                    speed = -(minSpeed + additionalSpeed);
                 }
             } else if (scrollDirectionRef.current === 'down') {
-                // proximity is 0 at the edge of the hotzone, 1 at the very bottom
                 const proximity = (y - (rect.height - hotZoneHeight)) / hotZoneHeight;
                 if (proximity > 0) {
-                    // Quadratic curve works well for downward scroll.
                     const additionalSpeed = (maxSpeed - minSpeed) * Math.pow(proximity, 2);
                     speed = minSpeed + additionalSpeed;
                 }
@@ -264,16 +217,10 @@ const WorkoutSessionScreen: React.FC = () => {
         const directTarget = e.target as HTMLElement;
         const targetElement = directTarget.closest('[data-drag-id]') as HTMLElement | null;
 
-        if (!targetElement) {
-            // If the cursor is between elements, do nothing and maintain the last indicator state.
-            return;
-        }
+        if (!targetElement) return;
 
         const targetId = targetElement.dataset.dragId;
-        if (!targetId || targetId === draggingId) {
-            // Dragging over itself, do nothing.
-            return;
-        }
+        if (!targetId || targetId === draggingId) return;
 
         const targetRect = targetElement.getBoundingClientRect();
         const midpointY = targetRect.top + targetRect.height / 2;
@@ -293,27 +240,22 @@ const WorkoutSessionScreen: React.FC = () => {
 
         const { targetId, position } = dropIndicator;
         
-        setLoggedExercises(prev => {
+        setActiveWorkoutSession((current: WorkoutSession | null) => {
+            if (!current) return null;
+            const prev = current.loggedExercises;
             const draggedItem = prev.find(p => p.tempId === draggingId);
-            if (!draggedItem) return prev;
+            if (!draggedItem) return current;
 
             const items = prev.filter(p => p.tempId !== draggingId);
-            
             let targetIndex = items.findIndex(p => p.tempId === targetId);
-            if (targetIndex === -1) return prev;
+            if (targetIndex === -1) return current;
             
-            if (position === 'bottom') {
-                targetIndex++;
-            }
-            
+            if (position === 'bottom') targetIndex++;
             items.splice(targetIndex, 0, draggedItem);
-
-            return items;
+            return { ...current, loggedExercises: items };
         });
-
         handleDragEnd();
     };
-
 
     const handleDragStart = (e: React.DragEvent, tempId: string) => {
         setDraggingId(tempId);
@@ -326,17 +268,6 @@ const WorkoutSessionScreen: React.FC = () => {
         setDraggingId(null);
         setDropIndicator(null);
     };
-
-    if (!activeWorkoutSession || !routine) {
-        return (
-            <div className="p-4 text-center">
-                <p>Erro: Sessão de treino ou rotina não encontrada.</p>
-                <button onClick={() => setActiveWorkoutSession(null)} className="mt-4 bg-primary text-white p-2 rounded">
-                    Voltar
-                </button>
-            </div>
-        );
-    }
 
     const handleAddExercise = (exerciseId: string) => {
         const exerciseToAdd = exercises.find(e => e.id === exerciseId);
@@ -351,154 +282,141 @@ const WorkoutSessionScreen: React.FC = () => {
                 confirmText: "Ir para Avaliação",
                 showCancelButton: true,
                 cancelText: "Agora não",
-                onConfirm: () => {
-                    if (!activeWorkoutSession) return;
-                    // Construct the current state to save
-                    const currentSessionState: WorkoutSession = {
-                        ...activeWorkoutSession,
-                        // clean up tempId before saving to main state
-                        loggedExercises: loggedExercises.map(({ tempId, ...rest }) => rest),
-                        duration: elapsedTime,
-                    };
-                    setActiveWorkoutSession(currentSessionState);
-                    
-                    // Navigate away
-                    setIsPhysicalEvaluationScreenOpen(true);
-                }
+                onConfirm: () => setIsPhysicalEvaluationScreenOpen(true)
             });
-            // Don't add the exercise. Wait for user action.
-            // Close the picker modal so the user can see the info modal clearly.
             setIsExercisePickerOpen(false);
-            return; 
+            return;
         }
 
-        const newLoggedExercise: TempLoggedExercise = {
+        const newLoggedExercise: LoggedExercise = {
             exerciseId,
             sets: [{}],
             notes: '',
             tempId: `le-${Date.now()}`
         };
-        setLoggedExercises(current => [...current, newLoggedExercise]);
+        setActiveWorkoutSession((current: WorkoutSession | null) => {
+            if (!current) return null;
+            return { ...current, loggedExercises: [...current.loggedExercises, newLoggedExercise] };
+        });
         setIsExercisePickerOpen(false);
     };
     
     const handleRemoveExercise = (tempIdToRemove: string) => {
-        setLoggedExercises(current => current.filter(ex => ex.tempId !== tempIdToRemove));
+        setActiveWorkoutSession((current: WorkoutSession | null) => {
+            if (!current) return null;
+            return { ...current, loggedExercises: current.loggedExercises.filter(ex => ex.tempId !== tempIdToRemove) };
+        });
     };
 
     const handleExerciseNoteChange = (tempId: string, value: string) => {
-        setLoggedExercises(currentLogs =>
-            currentLogs.map(log =>
-                log.tempId === tempId ? { ...log, notes: value } : log
-            )
-        );
+        setActiveWorkoutSession((current: WorkoutSession | null) => {
+            if (!current) return null;
+            return { ...current, loggedExercises: current.loggedExercises.map(log => log.tempId === tempId ? { ...log, notes: value } : log) };
+        });
     };
 
     const handleSetChange = (tempId: string, setIndex: number, field: keyof WorkoutSet, value: string) => {
-        setLoggedExercises(currentLogs => currentLogs.map(log => {
-            if (log.tempId !== tempId) return log;
-
-            const newSets = [...log.sets];
-            const updatedSet = { ...(newSets[setIndex] || {}) };
-            
-            if (field === 'effort') {
-                updatedSet.effort = value === '' ? undefined : value;
-            } else { // reps, value
-                const numericValue = value === '' ? undefined : Number(value);
-                (updatedSet as any)[field] = numericValue;
-            }
-            
-            newSets[setIndex] = updatedSet;
-            return { ...log, sets: newSets };
-        }));
+        setActiveWorkoutSession((currentSession: WorkoutSession | null) => {
+            if (!currentSession) return null;
+            const newLoggedExercises = currentSession.loggedExercises.map(log => {
+                if (log.tempId !== tempId) return log;
+                const newSets = [...log.sets];
+                const updatedSet = { ...(newSets[setIndex] || {}) };
+                if (field === 'effort') {
+                    updatedSet.effort = value === '' ? undefined : value;
+                } else {
+                    const numericValue = value === '' ? undefined : Number(value);
+                    (updatedSet as any)[field] = numericValue;
+                }
+                newSets[setIndex] = updatedSet;
+                return { ...log, sets: newSets };
+            });
+            return { ...currentSession, loggedExercises: newLoggedExercises };
+        });
     };
 
     const handleBarbellWeightChange = (tempId: string, value: string) => {
-        setLoggedExercises(currentLogs => currentLogs.map(log => {
-            if (log.tempId !== tempId) return log;
-            const newWeight = value === '' ? undefined : Number(value);
-            return { ...log, barbellWeight: newWeight };
-        }));
+        setActiveWorkoutSession((currentSession: WorkoutSession | null) => {
+            if (!currentSession) return null;
+            return {
+                ...currentSession,
+                loggedExercises: currentSession.loggedExercises.map(log => {
+                    if (log.tempId !== tempId) return log;
+                    const newWeight = value === '' ? undefined : Number(value);
+                    return { ...log, barbellWeight: newWeight };
+                })
+            };
+        });
     };
     
     const handleAddSet = (tempId: string) => {
-        setLoggedExercises(currentLogs => currentLogs.map(log => 
-            log.tempId === tempId ? { ...log, sets: [...log.sets, {}] } : log
-        ));
+        setActiveWorkoutSession((current: WorkoutSession | null) => {
+            if (!current) return null;
+            return {
+                ...current,
+                loggedExercises: current.loggedExercises.map(log => log.tempId === tempId ? { ...log, sets: [...log.sets, {}] } : log)
+            };
+        });
     };
     
     const handleDeleteSet = (tempId: string, setIndex: number) => {
-        setLoggedExercises(currentLogs => currentLogs.map(log => {
-            if (log.tempId !== tempId) return log;
-            const newSets = [...log.sets];
-            newSets.splice(setIndex, 1);
-            return { ...log, sets: newSets };
-        }));
+        setActiveWorkoutSession((current: WorkoutSession | null) => {
+            if (!current) return null;
+            return {
+                ...current,
+                loggedExercises: current.loggedExercises.map(log => {
+                    if (log.tempId !== tempId) return log;
+                    const newSets = [...log.sets];
+                    newSets.splice(setIndex, 1);
+                    return { ...log, sets: newSets };
+                })
+            };
+        });
     };
 
     const handleToggleSetComplete = (tempId: string, setIndex: number) => {
-        setLoggedExercises(currentLogs => {
-            const exerciseIndex = currentLogs.findIndex(l => l.tempId === tempId);
-            if (exerciseIndex === -1) return currentLogs;
+        setActiveWorkoutSession((currentSession: WorkoutSession | null) => {
+            if (!currentSession) return null;
+            const exerciseIndex = currentSession.loggedExercises.findIndex(l => l.tempId === tempId);
+            if (exerciseIndex === -1) return currentSession;
     
-            const originalSet = originalPlanRef.current[exerciseIndex]?.sets[setIndex] || {};
-            const exercise = exercises.find(e => e.id === currentLogs[exerciseIndex].exerciseId);
+            const originalSet = (currentSession.originalPlan || [])[exerciseIndex]?.sets[setIndex] || {};
+            const exercise = exercises.find(e => e.id === currentSession.loggedExercises[exerciseIndex].exerciseId);
     
-            return currentLogs.map(log => {
+            const newLoggedExercises = currentSession.loggedExercises.map(log => {
                 if (log.tempId !== tempId) return log;
     
                 const newSets = [...log.sets];
                 const set = { ...newSets[setIndex] };
                 const isNowCompleting = !set.completed;
                 set.completed = isNowCompleting;
-
-                if(isNowCompleting) vibrate();
+                if (isNowCompleting) vibrate();
                 
                 if (isNowCompleting) {
                     const isCountType = exercise?.measurementType === MeasurementType.COUNT;
-    
                     if (isCountType) {
-                        if (set.reps === undefined) {
-                            // When completing a set with a rep range, default to the minimum value.
-                            // This is more explicit than `??` and prioritizes the range.
-                            if (originalSet.repsMin !== undefined) {
-                                set.reps = originalSet.repsMin;
-                            } else {
-                                // Fallback for sets that only have a single `reps` value defined.
-                                set.reps = originalSet.reps;
-                            }
-                        }
-                    } else { // Time-based
-                        if (set.time === undefined) {
-                            set.time = originalSet.time;
-                        }
+                        if (set.reps === undefined) set.reps = originalSet.repsMin ?? originalSet.reps;
+                    } else {
+                        if (set.time === undefined) set.time = originalSet.time;
                     }
-    
-                    if (set.value === undefined) {
-                        set.value = originalSet.value;
-                    }
-    
-                    if (set.effort === undefined) {
-                        set.effort = originalSet.effort;
-                    }
+                    if (set.value === undefined) set.value = originalSet.value;
+                    if (set.effort === undefined) set.effort = originalSet.effort;
                 }
-                
                 newSets[setIndex] = set;
                 return { ...log, sets: newSets };
             });
+            return { ...currentSession, loggedExercises: newLoggedExercises };
         });
     };
 
     const handleFinishWorkout = () => {
+        if (!activeWorkoutSession) return;
         vibrate([100, 50, 100]);
-        const cleanedLoggedExercises = loggedExercises
-            .map(log => {
-                const { tempId, ...rest } = log; // Remove temporary ID
-                return {
-                    ...rest,
-                    sets: rest.sets.filter(set => Object.values(set).some(v => v != null && v !== false && v !== ''))
-                };
-            })
+        const cleanedLoggedExercises = activeWorkoutSession.loggedExercises
+            .map(({ tempId, ...log }) => ({
+                ...log,
+                sets: log.sets.filter(set => Object.values(set).some(v => v != null && v !== false && v !== ''))
+            }))
             .filter(log => log.sets.length > 0);
 
         const isNewWorkout = activeWorkoutSession.id.startsWith('ws_temp_');
@@ -506,18 +424,14 @@ const WorkoutSessionScreen: React.FC = () => {
 
         if (cleanedLoggedExercises.length === 0) {
             if (window.confirm("Nenhum exercício foi registrado. O treino não será salvo. Deseja continuar?")) {
-                // If it was an existing workout from the calendar, we should delete it.
-                if (!isNewWorkout) {
-                    deleteWorkout(activeWorkoutSession.id);
-                }
-                // If it was a new workout, just closing is enough to discard it.
+                if (!isNewWorkout) deleteWorkout(activeWorkoutSession.id);
                 setActiveWorkoutSession(null);
             }
-            return; // Don't proceed to save
+            return;
         }
         
         if (isNewWorkout) {
-            const { id, ...sessionData } = activeWorkoutSession;
+            const { id, originalPlan, ...sessionData } = activeWorkoutSession;
             const finalSession: Omit<WorkoutSession, 'id'> = {
                 ...sessionData,
                 loggedExercises: cleanedLoggedExercises,
@@ -526,10 +440,10 @@ const WorkoutSessionScreen: React.FC = () => {
                 duration: workoutDuration,
             };
             logWorkout(finalSession);
-            setActiveWorkoutSession(null);
         } else {
+            const { originalPlan, ...sessionData } = activeWorkoutSession;
             const updatedSession: WorkoutSession = {
-                ...activeWorkoutSession,
+                ...sessionData,
                 loggedExercises: cleanedLoggedExercises,
                 endTime: new Date().toISOString(),
                 completed: true,
@@ -539,10 +453,7 @@ const WorkoutSessionScreen: React.FC = () => {
         }
     };
     
-    const handleCancelWorkout = () => {
-        setIsCancelConfirmOpen(true);
-    };
-
+    const handleCancelWorkout = () => setIsCancelConfirmOpen(true);
     const confirmAndCancelWorkout = () => {
         setActiveWorkoutSession(null);
         setIsCancelConfirmOpen(false);
@@ -554,9 +465,21 @@ const WorkoutSessionScreen: React.FC = () => {
         setActiveWorkoutSession({
             ...activeWorkoutSession,
             startTime: newStartTime.toISOString(),
-            duration: undefined, // Duration is now baked into the start time.
+            duration: undefined,
         });
     };
+
+    if (!activeWorkoutSession || !routine) {
+        return (
+            <div className="p-4 text-center">
+                <p>Erro: Sessão de treino ou rotina não encontrada.</p>
+                <button onClick={() => setActiveWorkoutSession(null)} className="mt-4 bg-primary text-white p-2 rounded">
+                    Voltar
+                </button>
+            </div>
+        );
+    }
+    const loggedExercises = activeWorkoutSession.loggedExercises;
 
     return (
         <div className="h-full w-full bg-light-bg dark:bg-dark-bg flex flex-col font-sans">
@@ -571,9 +494,7 @@ const WorkoutSessionScreen: React.FC = () => {
                         className="text-xl font-bold text-secondary tabular-nums p-1 rounded-md hover:bg-light-bg dark:hover:bg-dark-bg transition-colors"
                         aria-label="Editar cronômetro"
                     >
-                        <div aria-live="polite">
-                            {formatDuration(elapsedTime)}
-                        </div>
+                        <div aria-live="polite">{formatDuration(elapsedTime)}</div>
                     </button>
                 </div>
                 <button onClick={handleCancelWorkout} className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-md text-sm whitespace-nowrap">
@@ -608,7 +529,7 @@ const WorkoutSessionScreen: React.FC = () => {
                             <div
                                 data-drag-id={loggedEx.tempId}
                                 draggable
-                                onDragStart={(e) => handleDragStart(e, loggedEx.tempId)}
+                                onDragStart={(e) => handleDragStart(e, loggedEx.tempId!)}
                                 onDragEnd={handleDragEnd}
                                 className={`bg-light-card dark:bg-dark-card p-4 rounded-lg space-y-4 cursor-grab transition-opacity ${draggingId === loggedEx.tempId ? 'opacity-40' : 'opacity-100'}`}
                             >
@@ -629,39 +550,25 @@ const WorkoutSessionScreen: React.FC = () => {
                                         </div>
                                         <div className="flex items-center gap-2 flex-wrap">
                                             <h3 className="text-lg font-semibold text-light-text dark:text-dark-text">{exercise.name}</h3>
-                                            {exercise.isCounterweight && (
-                                                <span className="text-xs bg-gray-200 dark:bg-gray-700 text-light-text-secondary dark:text-dark-text-secondary px-2 py-0.5 rounded-full whitespace-nowrap">
-                                                    Contrapeso
-                                                </span>
-                                            )}
-                                            {exercise.includeBarbellWeight && (
-                                                <span className="text-xs bg-gray-200 dark:bg-gray-700 text-light-text-secondary dark:text-dark-text-secondary px-2 py-0.5 rounded-full whitespace-nowrap">
-                                                    Peso da Barra
-                                                </span>
-                                            )}
-                                            {exercise.isWeightDoubled && (
-                                                <span className="text-xs bg-gray-200 dark:bg-gray-700 text-light-text-secondary dark:text-dark-text-secondary px-2 py-0.5 rounded-full whitespace-nowrap">
-                                                    Peso 2x
-                                                </span>
-                                            )}
+                                            {exercise.isCounterweight && (<span className="text-xs bg-gray-200 dark:bg-gray-700 text-light-text-secondary dark:text-dark-text-secondary px-2 py-0.5 rounded-full whitespace-nowrap">Contrapeso</span>)}
+                                            {exercise.includeBarbellWeight && (<span className="text-xs bg-gray-200 dark:bg-gray-700 text-light-text-secondary dark:text-dark-text-secondary px-2 py-0.5 rounded-full whitespace-nowrap">Peso da Barra</span>)}
+                                            {exercise.isWeightDoubled && (<span className="text-xs bg-gray-200 dark:bg-gray-700 text-light-text-secondary dark:text-dark-text-secondary px-2 py-0.5 rounded-full whitespace-nowrap">Peso 2x</span>)}
                                         </div>
                                         <button type="button" onClick={() => setInfoExercise(exercise)} className="p-1 flex items-center justify-center text-light-text-secondary dark:text-dark-text-secondary hover:text-blue-500" aria-label={`Informações sobre ${exercise.name}`}>
                                             <InfoIcon className="h-5 w-5" />
                                         </button>
                                     </div>
-                                    <button type="button" onClick={() => handleRemoveExercise(loggedEx.tempId)} className="p-1 flex items-center justify-center text-light-text-secondary dark:text-dark-text-secondary hover:text-red-500" aria-label={`Remover ${exercise.name} do treino`}>
+                                    <button type="button" onClick={() => handleRemoveExercise(loggedEx.tempId!)} className="p-1 flex items-center justify-center text-light-text-secondary dark:text-dark-text-secondary hover:text-red-500" aria-label={`Remover ${exercise.name} do treino`}>
                                         <TrashIcon className="h-5 w-5" />
                                     </button>
                                 </div>
-                                
                                 <textarea
                                     value={loggedEx.notes || ''}
-                                    onChange={(e) => handleExerciseNoteChange(loggedEx.tempId, e.target.value)}
+                                    onChange={(e) => handleExerciseNoteChange(loggedEx.tempId!, e.target.value)}
                                     placeholder="Anotações do treino para este exercício..."
                                     rows={2}
                                     className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2 text-sm"
                                 />
-
                                 {exercise.includeBarbellWeight && (
                                     <div className="mt-3">
                                         <label htmlFor={`barbell-${loggedEx.tempId}`} className="block text-sm font-medium mb-1">Peso da Barra (kg)</label>
@@ -672,135 +579,62 @@ const WorkoutSessionScreen: React.FC = () => {
                                             step="any"
                                             value={loggedEx.barbellWeight ?? ''}
                                             placeholder={(originalPlanRef.current[exIndex]?.barbellWeight ?? '').toString()}
-                                            onChange={(e) => handleBarbellWeightChange(loggedEx.tempId, e.target.value)}
+                                            onChange={(e) => handleBarbellWeightChange(loggedEx.tempId!, e.target.value)}
                                             className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2"
                                         />
                                     </div>
                                 )}
-                                
                                 <div className="space-y-3">
                                     {setsToRender.map((set, setIndex) => {
                                         const originalSet = originalPlanRef.current[exIndex]?.sets[setIndex] || {};
                                         const isCountType = exercise.measurementType === MeasurementType.COUNT;
                                         
-                                        let repsTimePlaceholder = '';
-                                        if (isCountType) {
-                                            const plannedSingleRep = activeWorkoutSession?.completed ? set.reps : originalSet.reps;
-                                            repsTimePlaceholder = (originalSet.repsMin !== undefined || originalSet.repsMax !== undefined)
-                                                ? `${originalSet.repsMin ?? ''}-${originalSet.repsMax ?? ''}`
-                                                : plannedSingleRep?.toString() ?? '';
-                                        } else {
-                                            const plannedTime = activeWorkoutSession?.completed ? set.time : originalSet.time;
-                                            repsTimePlaceholder = formatSecondsToMMSS(plannedTime) || "MM:SS";
-                                        }
-                                        
-                                        const valueFromPlan = activeWorkoutSession?.completed ? set.value : originalSet.value;
-                                        const valuePlaceholder = valueFromPlan?.toString() ?? '';
-                                        const effortFromPlan = activeWorkoutSession?.completed ? set.effort : originalSet.effort;
+                                        let repsTimePlaceholder = isCountType ? ((originalSet.repsMin !== undefined || originalSet.repsMax !== undefined) ? `${originalSet.repsMin ?? ''}-${originalSet.repsMax ?? ''}` : originalSet.reps?.toString() ?? '') : (formatSecondsToMMSS(originalSet.time) || "MM:SS");
+                                        const valuePlaceholder = originalSet.value?.toString() ?? '';
+                                        const effortFromPlan = originalSet.effort;
 
                                         const lastSetData = lastLoggedExercise?.sets[setIndex];
                                         let lastSetString = '';
-                                        if (lastSetData && !activeWorkoutSession.completed) {
+                                        if (lastSetData) {
                                             const parts = [];
-                                            if (exercise.category === ExerciseCategory.RESISTED) {
-                                                if (lastSetData.reps !== undefined) parts.push(`${lastSetData.reps} reps`);
-                                                if (lastSetData.value !== undefined && exercise.unit === Unit.KG) parts.push(`${lastSetData.value}kg`);
-                                                else if (lastSetData.value !== undefined && exercise.unit !== Unit.NONE) parts.push(`${lastSetData.value} ${exercise.unit}`);
-                                                if (lastSetData.effort) parts.push(`PSE ${lastSetData.effort}`);
-                                                if (parts.length > 0) lastSetString = `Último: ${parts.join(' x ')}`;
-                                            } else if (exercise.category === ExerciseCategory.FLEXIBILITY) {
-                                                if (exercise.measurementType === MeasurementType.TIME) {
-                                                    if (lastSetData.time !== undefined) parts.push(formatSecondsToMMSS(lastSetData.time));
-                                                } else {
-                                                    if (lastSetData.reps !== undefined) parts.push(`${lastSetData.reps} reps`);
-                                                }
-                                                if (lastSetData.effort) parts.push(`PSE ${lastSetData.effort}`);
-                                                if (parts.length > 0) lastSetString = `Último: ${parts.join(' x ')}`;
-                                            }
+                                            if (lastSetData.reps !== undefined) parts.push(`${lastSetData.reps} reps`);
+                                            if (lastSetData.value !== undefined && exercise.unit === Unit.KG) parts.push(`${lastSetData.value}kg`);
+                                            if (lastSetData.effort) parts.push(`PSE ${lastSetData.effort}`);
+                                            if (parts.length > 0) lastSetString = `Último: ${parts.join(' x ')}`;
                                         }
                                         
                                         return (
                                             <div key={setIndex} className={`bg-light-bg dark:bg-dark-bg p-3 rounded-lg space-y-3 transition-opacity ${set.completed ? 'opacity-50' : ''}`}>
                                                 <div className="flex justify-between items-center">
-                                                    <div className="flex items-center gap-3 cursor-pointer" onClick={() => handleToggleSetComplete(loggedEx.tempId, setIndex)}>
-                                                         <input 
-                                                            type="checkbox"
-                                                            aria-label={`Marcar série ${setIndex + 1} como completa`}
-                                                            checked={!!set.completed}
-                                                            readOnly
-                                                            className="h-5 w-5 rounded text-secondary bg-light-bg dark:bg-dark-bg border-light-border dark:border-dark-border focus:ring-secondary focus:ring-2 cursor-pointer"
-                                                        />
+                                                    <div className="flex items-center gap-3 cursor-pointer" onClick={() => handleToggleSetComplete(loggedEx.tempId!, setIndex)}>
+                                                         <input type="checkbox" aria-label={`Marcar série ${setIndex + 1} como completa`} checked={!!set.completed} readOnly className="h-5 w-5 rounded text-secondary bg-light-bg dark:bg-dark-bg border-light-border dark:border-dark-border focus:ring-secondary focus:ring-2 cursor-pointer" />
                                                          <span className={`font-bold text-lg text-light-text dark:text-dark-text ${set.completed ? 'line-through' : ''}`}>Série {setIndex + 1}</span>
                                                     </div>
-                                                    <button onClick={() => handleDeleteSet(loggedEx.tempId, setIndex)} className="p-2 flex items-center justify-center text-light-text-secondary dark:text-dark-text-secondary hover:text-red-500" aria-label={`Deletar série ${setIndex + 1}`}>
+                                                    <button onClick={() => handleDeleteSet(loggedEx.tempId!, setIndex)} className="p-2 flex items-center justify-center text-light-text-secondary dark:text-dark-text-secondary hover:text-red-500" aria-label={`Deletar série ${setIndex + 1}`}>
                                                         <TrashIcon className="h-5 w-5" />
                                                     </button>
                                                 </div>
-
-                                                {lastSetString && (
-                                                    <div className="w-full text-center text-xs text-secondary dark:text-pink-400" aria-label={`Dados da última vez: ${lastSetString}`}>
-                                                        {lastSetString}
-                                                    </div>
-                                                )}
-
-                                                <div className="flex flex-wrap gap-4">
-                                                    <div className="flex-1 min-w-[100px]">
+                                                {lastSetString && (<div className="w-full text-center text-xs text-secondary dark:text-pink-400" aria-label={`Dados da última vez: ${lastSetString}`}>{lastSetString}</div>)}
+                                                <div className="flex items-end gap-3">
+                                                    <div className="grow-[2] shrink basis-[80px]">
                                                         <label className="block text-xs font-medium mb-1 text-light-text-secondary dark:text-dark-text-secondary">{isCountType ? 'Repetições' : 'Tempo'}</label>
                                                         {isCountType ? (
-                                                            <input 
-                                                                type="number" 
-                                                                inputMode="numeric"
-                                                                aria-label={`Repetições para série ${setIndex + 1}`}
-                                                                placeholder={repsTimePlaceholder}
-                                                                value={set.reps ?? ''}
-                                                                onFocus={(e) => e.target.select()}
-                                                                onChange={e => handleSetChange(loggedEx.tempId, setIndex, 'reps', e.target.value)}
-                                                                className={`w-full bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-2 text-center text-light-text dark:text-dark-text transition-colors duration-300 ${set.completed ? 'line-through' : ''}`}
-                                                            />
+                                                            <input type="number" inputMode="numeric" aria-label={`Repetições para série ${setIndex + 1}`} placeholder={repsTimePlaceholder} value={set.reps ?? ''} onFocus={(e) => e.target.select()} onChange={e => handleSetChange(loggedEx.tempId!, setIndex, 'reps', e.target.value)} className={`w-full bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-2 text-center text-light-text dark:text-dark-text transition-colors duration-300 ${set.completed ? 'line-through' : ''}`} />
                                                         ) : (
-                                                            <TimeInput
-                                                                id={`session-time-input-${loggedEx.tempId}-${setIndex}`}
-                                                                valueInSeconds={set.time}
-                                                                onChangeInSeconds={(seconds) => {
-                                                                    setLoggedExercises(currentLogs => currentLogs.map(log => {
-                                                                        if (log.tempId !== loggedEx.tempId) return log;
-                                                                        const newSets = [...log.sets];
-                                                                        const updatedSet = { ...(newSets[setIndex] || {}) };
-                                                                        updatedSet.time = seconds;
-                                                                        newSets[setIndex] = updatedSet;
-                                                                        return { ...log, sets: newSets };
-                                                                    }));
-                                                                }}
-                                                                placeholder={repsTimePlaceholder}
-                                                                className={`w-full bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-2 text-center text-light-text dark:text-dark-text transition-colors duration-300 ${set.completed ? 'line-through' : ''}`}
-                                                            />
+                                                            <TimeInput id={`session-time-input-${loggedEx.tempId}-${setIndex}`} valueInSeconds={set.time} onChangeInSeconds={(seconds) => handleSetChange(loggedEx.tempId!, setIndex, 'time', seconds?.toString() ?? '')} placeholder={repsTimePlaceholder} className={`w-full bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-2 text-center text-light-text dark:text-dark-text transition-colors duration-300 ${set.completed ? 'line-through' : ''}`} />
                                                         )}
                                                     </div>
                                                     {exercise.unit !== Unit.NONE &&
-                                                        <div className="flex-1 min-w-[100px]">
+                                                        <div className="grow-[2] shrink basis-[80px]">
                                                             <label className="block text-xs font-medium mb-1 text-light-text-secondary dark:text-dark-text-secondary">{exercise.unit}</label>
-                                                            <input 
-                                                                type="number" 
-                                                                aria-label={`Peso para série ${setIndex + 1}`}
-                                                                placeholder={valuePlaceholder}
-                                                                value={set.value ?? ''}
-                                                                onFocus={(e) => e.target.select()}
-                                                                onChange={e => handleSetChange(loggedEx.tempId, setIndex, 'value', e.target.value)}
-                                                                className={`w-full bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-2 text-center text-light-text dark:text-dark-text transition-colors duration-300 ${set.completed ? 'line-through' : ''}`}
-                                                            />
+                                                            <input type="number" aria-label={`Peso para série ${setIndex + 1}`} placeholder={valuePlaceholder} value={set.value ?? ''} onFocus={(e) => e.target.select()} onChange={e => handleSetChange(loggedEx.tempId!, setIndex, 'value', e.target.value)} className={`w-full bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-2 text-center text-light-text dark:text-dark-text transition-colors duration-300 ${set.completed ? 'line-through' : ''}`} />
                                                         </div>
                                                     }
                                                      {scaleOptions && (
-                                                        <div className="flex-1 min-w-[120px]">
+                                                        <div className="grow-[3] shrink basis-[100px]">
                                                             <label className="block text-xs font-medium mb-1 text-light-text-secondary dark:text-dark-text-secondary">Esforço</label>
                                                             <div className="h-10">
-                                                                <EffortPicker
-                                                                    value={set.effort}
-                                                                    onChange={(val) => handleSetChange(loggedEx.tempId, setIndex, 'effort', val === undefined ? '' : val)}
-                                                                    options={scaleOptions}
-                                                                    placeholder={effortFromPlan ? `Sug: ${effortFromPlan}` : 'Selecionar...'}
-                                                                    disabled={!!set.completed}
-                                                                />
+                                                                <EffortPicker value={set.effort} onChange={(val) => handleSetChange(loggedEx.tempId!, setIndex, 'effort', val === undefined ? '' : val)} options={scaleOptions} placeholder={effortFromPlan ? `Sug: ${effortFromPlan}` : 'Selecionar...'} disabled={!!set.completed} />
                                                             </div>
                                                         </div>
                                                     )}
@@ -809,8 +643,7 @@ const WorkoutSessionScreen: React.FC = () => {
                                         )
                                     })}
                                 </div>
-                                
-                                <button onClick={() => handleAddSet(loggedEx.tempId)} className="w-full mt-2 bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-md flex items-center justify-center text-sm">
+                                <button onClick={() => handleAddSet(loggedEx.tempId!)} className="w-full mt-2 bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-md flex items-center justify-center text-sm">
                                     <PlusIcon className="h-5 w-5 mr-2" />
                                     Adicionar Série
                                 </button>
@@ -821,56 +654,21 @@ const WorkoutSessionScreen: React.FC = () => {
                         </React.Fragment>
                     );
                 })}
-                 <button 
-                    type="button" 
-                    onClick={() => setIsExercisePickerOpen(true)} 
-                    className="w-full mt-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-md flex items-center justify-center"
-                >
+                 <button type="button" onClick={() => setIsExercisePickerOpen(true)} className="w-full mt-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-md flex items-center justify-center">
                     <PlusIcon className="h-5 w-5 mr-2" />
                     Adicionar Exercício
                 </button>
             </main>
             <footer className="flex-shrink-0 bg-light-card dark:bg-dark-card p-4 border-t border-light-border dark:border-dark-border safe-bottom-padding">
-                 <button 
-                    onClick={handleFinishWorkout} 
-                    className="w-full bg-secondary hover:bg-pink-700 text-white font-bold py-3 px-4 rounded-md flex items-center justify-center text-lg"
-                >
+                 <button onClick={handleFinishWorkout} className="w-full bg-secondary hover:bg-pink-700 text-white font-bold py-3 px-4 rounded-md flex items-center justify-center text-lg">
                     <CheckCircleIcon className="h-6 w-6 mr-2" />
                     Concluir Treino
                 </button>
             </footer>
-            {isExercisePickerOpen && (
-                <ExercisePickerModal 
-                    onClose={() => setIsExercisePickerOpen(false)}
-                    onSelect={handleAddExercise}
-                    allExercises={exercises}
-                />
-            )}
-            {isCancelConfirmOpen && (
-                <ConfirmationModal
-                    isOpen={isCancelConfirmOpen}
-                    onClose={() => setIsCancelConfirmOpen(false)}
-                    onConfirm={confirmAndCancelWorkout}
-                    title="Cancelar Treino"
-                    message="Tem certeza que deseja cancelar o treino? O progresso não salvo será perdido."
-                    confirmText="Sim"
-                    cancelText="Não"
-                />
-            )}
-            {isTimerEditModalOpen && (
-                <TimerEditModal
-                    isOpen={isTimerEditModalOpen}
-                    onClose={() => setIsTimerEditModalOpen(false)}
-                    onSave={handleEditTimer}
-                    initialTime={elapsedTime}
-                />
-            )}
-            {infoExercise && (
-                <ExerciseInfoModal
-                    exercise={infoExercise}
-                    onClose={() => setInfoExercise(null)}
-                />
-            )}
+            {isExercisePickerOpen && (<ExercisePickerModal onClose={() => setIsExercisePickerOpen(false)} onSelect={handleAddExercise} allExercises={exercises} />)}
+            {isCancelConfirmOpen && (<ConfirmationModal isOpen={isCancelConfirmOpen} onClose={() => setIsCancelConfirmOpen(false)} onConfirm={confirmAndCancelWorkout} title="Cancelar Treino" message="Tem certeza que deseja cancelar o treino? O progresso não salvo será perdido." confirmText="Sim" cancelText="Não" />)}
+            {isTimerEditModalOpen && (<TimerEditModal isOpen={isTimerEditModalOpen} onClose={() => setIsTimerEditModalOpen(false)} onSave={handleEditTimer} initialTime={elapsedTime} />)}
+            {infoExercise && (<ExerciseInfoModal exercise={infoExercise} onClose={() => setInfoExercise(null)} />)}
         </div>
     );
 };
@@ -881,7 +679,6 @@ interface TimerEditModalProps {
     onSave: (newTimeInSeconds: number) => void;
     initialTime: number;
 }
-
 const TimerEditModal: React.FC<TimerEditModalProps> = ({ isOpen, onClose, onSave, initialTime }) => {
     const [newTime, setNewTime] = useState<number | undefined>(initialTime);
 
@@ -923,24 +720,23 @@ const TimerEditModal: React.FC<TimerEditModalProps> = ({ isOpen, onClose, onSave
         </div>
     );
 };
-
-
 interface ExercisePickerModalProps {
     onClose: () => void;
     onSelect: (exerciseId: string) => void;
     allExercises: Exercise[];
 }
-
 const ExercisePickerModal: React.FC<ExercisePickerModalProps> = ({ onClose, onSelect, allExercises }) => {
     const [searchQuery, setSearchQuery] = useState('');
+    const [categoryFilter, setCategoryFilter] = useState<ExerciseCategory | null>(null);
 
     const filteredExercises = useMemo(() => {
         const query = searchQuery.toLowerCase().trim();
-        if (!query) {
-            return allExercises;
-        }
-        return allExercises.filter(ex => ex.name.toLowerCase().includes(query));
-    }, [allExercises, searchQuery]);
+        return allExercises.filter(ex => {
+            const searchMatch = !query || ex.name.toLowerCase().includes(query);
+            const categoryMatch = !categoryFilter || ex.category === categoryFilter;
+            return searchMatch && categoryMatch;
+        });
+    }, [allExercises, searchQuery, categoryFilter]);
 
     const exercisesByCategory = useMemo(() => {
         return filteredExercises.reduce((acc, exercise) => {
@@ -949,7 +745,13 @@ const ExercisePickerModal: React.FC<ExercisePickerModalProps> = ({ onClose, onSe
             return acc;
         }, {} as Record<ExerciseCategory, Exercise[]>);
     }, [filteredExercises]);
-
+    
+    const categoryFilterOptions: { label: string; value: ExerciseCategory | null }[] = [
+        { label: 'Todos', value: null },
+        { label: ExerciseCategory.RESISTED, value: ExerciseCategory.RESISTED },
+        { label: ExerciseCategory.CARDIO, value: ExerciseCategory.CARDIO },
+        { label: ExerciseCategory.FLEXIBILITY, value: ExerciseCategory.FLEXIBILITY }
+    ];
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
@@ -958,18 +760,38 @@ const ExercisePickerModal: React.FC<ExercisePickerModalProps> = ({ onClose, onSe
                     <h3 className="text-xl font-bold">Selecionar Exercício</h3>
                     <button type="button" onClick={onClose} className="p-1 rounded-full flex items-center justify-center hover:bg-light-bg dark:hover:bg-dark-bg"><XIcon className="h-6 w-6 text-light-text-secondary dark:text-dark-text-secondary" /></button>
                 </div>
-                <div className="relative mb-4 flex-shrink-0">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <SearchIcon className="h-5 w-5 text-light-text-secondary dark:text-dark-text-secondary" />
+                <div className="flex-shrink-0 space-y-4 mb-4">
+                    <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <SearchIcon className="h-5 w-5 text-light-text-secondary dark:text-dark-text-secondary" />
+                        </div>
+                        <input
+                            type="text"
+                            placeholder="Buscar por nome..."
+                            value={searchQuery}
+                            onChange={e => setSearchQuery(e.target.value)}
+                            className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-lg py-2 pl-10 pr-4"
+                            autoFocus
+                        />
                     </div>
-                    <input
-                        type="text"
-                        placeholder="Buscar por nome..."
-                        value={searchQuery}
-                        onChange={e => setSearchQuery(e.target.value)}
-                        className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-lg py-2 pl-10 pr-4"
-                        autoFocus
-                    />
+                    <div>
+                        <div className="grid grid-cols-2 gap-1 rounded-lg bg-light-bg dark:bg-dark-bg p-1">
+                            {categoryFilterOptions.map(option => (
+                                <button
+                                    key={option.label}
+                                    type="button"
+                                    onClick={() => setCategoryFilter(option.value)}
+                                    className={`w-full whitespace-nowrap flex items-center justify-center p-2 rounded-md text-xs sm:text-sm font-semibold transition-colors ${
+                                        categoryFilter === option.value
+                                            ? 'bg-primary text-white shadow'
+                                            : 'text-light-text-secondary dark:text-dark-text-secondary hover:bg-light-card dark:hover:bg-dark-border'
+                                    }`}
+                                >
+                                    {option.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
                 </div>
                 <div className="overflow-y-auto space-y-3 flex-grow pr-1">
                     {Object.keys(exercisesByCategory).length > 0 ? (
@@ -1004,5 +826,4 @@ const ExercisePickerModal: React.FC<ExercisePickerModalProps> = ({ onClose, onSe
         </div>
     );
 };
-
 export default WorkoutSessionScreen;

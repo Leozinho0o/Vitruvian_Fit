@@ -727,7 +727,7 @@ interface FolderItemProps {
 }
 
 const FolderItem: React.FC<FolderItemProps> = ({ folder, routines, onEditRoutine, onDeleteRoutine, onDuplicateRoutine, onStartWorkout, onEditFolder, onDeleteFolder, onShowStats, isDropTarget, draggingItem, onDragStart, onDragEnd, onTouchStart, onFolderDrop, onItemDrop, isTouchDevice, dropIndicator }) => {
-    const [isExpanded, setIsExpanded] = useState(true);
+    const [isExpanded, setIsExpanded] = useState(false);
     const folderRef = useRef<HTMLDivElement>(null);
     const folderHeaderRef = useRef<HTMLDivElement>(null);
     const isDraggingThis = draggingItem?.type === 'folder' && draggingItem.id === folder.id;
@@ -941,14 +941,16 @@ interface ExercisePickerModalProps {
 
 const ExercisePickerModal: React.FC<ExercisePickerModalProps> = ({ onClose, onSelect, allExercises }) => {
     const [searchQuery, setSearchQuery] = useState('');
+    const [categoryFilter, setCategoryFilter] = useState<ExerciseCategory | null>(null);
 
     const filteredExercises = useMemo(() => {
         const query = searchQuery.toLowerCase().trim();
-        if (!query) {
-            return allExercises;
-        }
-        return allExercises.filter(ex => ex.name.toLowerCase().includes(query));
-    }, [allExercises, searchQuery]);
+        return allExercises.filter(ex => {
+            const searchMatch = !query || ex.name.toLowerCase().includes(query);
+            const categoryMatch = !categoryFilter || ex.category === categoryFilter;
+            return searchMatch && categoryMatch;
+        });
+    }, [allExercises, searchQuery, categoryFilter]);
 
     const exercisesByCategory = useMemo(() => {
         return filteredExercises.reduce((acc, exercise) => {
@@ -958,6 +960,12 @@ const ExercisePickerModal: React.FC<ExercisePickerModalProps> = ({ onClose, onSe
         }, {} as Record<ExerciseCategory, Exercise[]>);
     }, [filteredExercises]);
 
+    const categoryFilterOptions: { label: string; value: ExerciseCategory | null }[] = [
+        { label: 'Todos', value: null },
+        { label: ExerciseCategory.RESISTED, value: ExerciseCategory.RESISTED },
+        { label: ExerciseCategory.CARDIO, value: ExerciseCategory.CARDIO },
+        { label: ExerciseCategory.FLEXIBILITY, value: ExerciseCategory.FLEXIBILITY }
+    ];
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
@@ -966,18 +974,38 @@ const ExercisePickerModal: React.FC<ExercisePickerModalProps> = ({ onClose, onSe
                     <h3 className="text-xl font-bold">Selecionar Exercício</h3>
                     <button type="button" onClick={onClose} className="p-1 rounded-full flex items-center justify-center hover:bg-light-bg dark:hover:bg-dark-bg"><XIcon className="h-6 w-6 text-light-text-secondary dark:text-dark-text-secondary" /></button>
                 </div>
-                <div className="relative mb-4 flex-shrink-0">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <SearchIcon className="h-5 w-5 text-light-text-secondary dark:text-dark-text-secondary" />
+                <div className="flex-shrink-0 space-y-4 mb-4">
+                    <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <SearchIcon className="h-5 w-5 text-light-text-secondary dark:text-dark-text-secondary" />
+                        </div>
+                        <input
+                            type="text"
+                            placeholder="Buscar por nome..."
+                            value={searchQuery}
+                            onChange={e => setSearchQuery(e.target.value)}
+                            className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-lg py-2 pl-10 pr-4"
+                            autoFocus
+                        />
                     </div>
-                    <input
-                        type="text"
-                        placeholder="Buscar por nome..."
-                        value={searchQuery}
-                        onChange={e => setSearchQuery(e.target.value)}
-                        className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-lg py-2 pl-10 pr-4"
-                        autoFocus
-                    />
+                    <div>
+                        <div className="grid grid-cols-2 gap-1 rounded-lg bg-light-bg dark:bg-dark-bg p-1">
+                            {categoryFilterOptions.map(option => (
+                                <button
+                                    key={option.label}
+                                    type="button"
+                                    onClick={() => setCategoryFilter(option.value)}
+                                    className={`w-full whitespace-nowrap flex items-center justify-center p-2 rounded-md text-xs sm:text-sm font-semibold transition-colors ${
+                                        categoryFilter === option.value
+                                            ? 'bg-primary text-white shadow'
+                                            : 'text-light-text-secondary dark:text-dark-text-secondary hover:bg-light-card dark:hover:bg-dark-border'
+                                    }`}
+                                >
+                                    {option.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
                 </div>
                 <div className="overflow-y-auto space-y-3 flex-grow pr-1">
                     {Object.keys(exercisesByCategory).length > 0 ? (
@@ -1308,6 +1336,7 @@ const RoutineFormModal: React.FC<RoutineFormModalProps> = ({ onClose, onSave, ro
                                 const exercise = allExercises.find(e => e.id === pex.exerciseId);
                                 if (!exercise) return null;
                                 const scaleOptions = getScaleOptions(exercise.perceivedExertionScale);
+                                const hasValueColumn = exercise.unit !== Unit.NONE;
                                 
                                 return (
                                 <React.Fragment key={pex.dragId}>
@@ -1390,13 +1419,13 @@ const RoutineFormModal: React.FC<RoutineFormModalProps> = ({ onClose, onSave, ro
                                         {/* Column Headers */}
                                         <div className="grid grid-cols-12 gap-x-2 items-center text-xs text-center font-medium text-light-text-secondary dark:text-dark-text-secondary mb-2 px-1">
                                             <div className="col-span-1">#</div>
-                                            <div className="col-span-4">
+                                            <div className={hasValueColumn ? "col-span-4" : "col-span-5"}>
                                                 {exercise.measurementType === MeasurementType.COUNT ? 'Reps (Min-Max)' : 'Tempo'}
                                             </div>
-                                            <div className="col-span-3">
-                                                {exercise.unit !== Unit.NONE ? exercise.unit : 'Valor'}
-                                            </div>
-                                            <div className="col-span-3">
+                                            {hasValueColumn && (
+                                                <div className="col-span-3">Valor</div>
+                                            )}
+                                            <div className={hasValueColumn ? "col-span-3" : "col-span-5"}>
                                                 {scaleOptions ? 'Esforço' : ''}
                                             </div>
                                             <div className="col-span-1" aria-hidden="true" />
@@ -1406,19 +1435,21 @@ const RoutineFormModal: React.FC<RoutineFormModalProps> = ({ onClose, onSave, ro
                                                 <div key={setIndex} className="grid grid-cols-12 gap-x-2 items-center">
                                                     <span className="col-span-1 text-center font-bold">{setIndex + 1}</span>
                                                     {exercise.measurementType === MeasurementType.COUNT ? (
-                                                        <div className="col-span-4 grid grid-cols-2 gap-x-1">
+                                                        <div className={`${hasValueColumn ? "col-span-4" : "col-span-5"} grid grid-cols-2 gap-x-1`}>
                                                             <input type="number" placeholder="Min Reps" value={set.repsMin ?? ''} onChange={e => handleSetChange(exIndex, setIndex, 'repsMin', e.target.value ? Number(e.target.value) : undefined)} className="w-full text-center bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-1 text-sm" />
                                                             <input type="number" placeholder="Max Reps" value={set.repsMax ?? ''} onChange={e => handleSetChange(exIndex, setIndex, 'repsMax', e.target.value ? Number(e.target.value) : undefined)} className="w-full text-center bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-1 text-sm" />
                                                         </div>
                                                     ) : (
-                                                        <div className="col-span-4">
+                                                        <div className={hasValueColumn ? "col-span-4" : "col-span-5"}>
                                                             <TimeInput id={`time-${exIndex}-${setIndex}`} valueInSeconds={set.time} onChangeInSeconds={seconds => handleSetChange(exIndex, setIndex, 'time', seconds)} placeholder="MM:SS" className="w-full text-center bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-1 text-sm" />
                                                         </div>
                                                     )}
-                                                    <div className="col-span-3">
-                                                    {exercise.unit !== Unit.NONE && <input type="number" placeholder={exercise.unit} value={set.value ?? ''} onChange={e => handleSetChange(exIndex, setIndex, 'value', e.target.value ? Number(e.target.value) : undefined)} className="w-full text-center bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-1 text-sm" />}
-                                                    </div>
-                                                    <div className="col-span-3 h-8">
+                                                    {hasValueColumn && (
+                                                      <div className="col-span-3">
+                                                        <input type="number" placeholder={exercise.unit} value={set.value ?? ''} onChange={e => handleSetChange(exIndex, setIndex, 'value', e.target.value ? Number(e.target.value) : undefined)} className="w-full text-center bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-1 text-sm" />
+                                                      </div>
+                                                    )}
+                                                    <div className={`${hasValueColumn ? "col-span-3" : "col-span-5"} h-8`}>
                                                         {scaleOptions && (
                                                             <EffortPicker
                                                                 value={set.effort}

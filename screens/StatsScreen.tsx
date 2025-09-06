@@ -1,4 +1,3 @@
-
 import React, { useMemo, useState } from 'react';
 import { useApp } from '../App';
 import { WorkoutSession, Routine, ExerciseCategory, Unit, MeasurementType, Evaluation } from '../types';
@@ -15,8 +14,8 @@ const formatDateForInput = (date: Date): string => {
 // Main StatsScreen Component
 const StatsScreen: React.FC = () => {
     const { workouts, routines, exercises, muscleGroups, evaluations } = useApp();
-    const [isGeralExpanded, setIsGeralExpanded] = useState(true);
-    const [isResistidoExpanded, setIsResistidoExpanded] = useState(true);
+    const [isGeralExpanded, setIsGeralExpanded] = useState(false);
+    const [isResistidoExpanded, setIsResistidoExpanded] = useState(false);
     const [isCardioExpanded, setIsCardioExpanded] = useState(false);
     const [isFlexibilidadeExpanded, setIsFlexibilidadeExpanded] = useState(false);
     const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
