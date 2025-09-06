@@ -1423,7 +1423,7 @@ const RoutineFormModal: React.FC<RoutineFormModalProps> = ({ onClose, onSave, ro
                                                 {exercise.measurementType === MeasurementType.COUNT ? 'Reps (Min-Max)' : 'Tempo'}
                                             </div>
                                             {hasValueColumn && (
-                                                <div className="col-span-3">Valor</div>
+                                                <div className="col-span-3">{exercise.unit}</div>
                                             )}
                                             <div className={hasValueColumn ? "col-span-3" : "col-span-5"}>
                                                 {scaleOptions ? 'Esforço' : ''}
