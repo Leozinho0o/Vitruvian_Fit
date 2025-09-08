@@ -523,7 +523,7 @@ const WorkoutSessionScreen: React.FC = () => {
                     const setsToRender = exerciseSets.length > 0 ? exerciseSets : [{}];
                     return (
                         <React.Fragment key={loggedEx.tempId}>
-                            {dropIndicator?.targetId === loggedEx.tempId && dropIndicator.position === 'top' && (
+                            {dropIndicator && dropIndicator.targetId === loggedEx.tempId && dropIndicator.position === 'top' && (
                                 <div className="h-1.5 bg-secondary rounded-full my-1"></div>
                             )}
                             <div
@@ -648,7 +648,7 @@ const WorkoutSessionScreen: React.FC = () => {
                                     Adicionar Série
                                 </button>
                             </div>
-                            {dropIndicator?.targetId === loggedEx.tempId && dropIndicator.position === 'bottom' && (
+                            {dropIndicator && dropIndicator.targetId === loggedEx.tempId && dropIndicator.position === 'bottom' && (
                                 <div className="h-1.5 bg-secondary rounded-full my-1"></div>
                             )}
                         </React.Fragment>

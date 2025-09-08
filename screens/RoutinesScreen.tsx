@@ -519,7 +519,7 @@ const RoutinesScreen = () => {
 
                 {finalFolders.map((folder: Folder) => (
                     <React.Fragment key={folder.id}>
-                        {dropIndicator?.targetId === folder.id && dropIndicator.type === 'folder' && dropIndicator.position === 'top' && (
+                        {dropIndicator && dropIndicator.targetId === folder.id && dropIndicator.type === 'folder' && dropIndicator.position === 'top' && (
                             <div className="h-1.5 bg-secondary rounded-full my-1"></div>
                         )}
                         <FolderItem
@@ -565,7 +565,7 @@ const RoutinesScreen = () => {
                             isTouchDevice={isTouchDevice}
                             dropIndicator={dropIndicator}
                         />
-                         {dropIndicator?.targetId === folder.id && dropIndicator.type === 'folder' && dropIndicator.position === 'bottom' && (
+                         {dropIndicator && dropIndicator.targetId === folder.id && dropIndicator.type === 'folder' && dropIndicator.position === 'bottom' && (
                             <div className="h-1.5 bg-secondary rounded-full my-1"></div>
                         )}
                     </React.Fragment>
@@ -594,6 +594,7 @@ const RoutinesScreen = () => {
                         onDragStart={(e) => handleDragStart(e, {type: 'routine', id: routine.id, source: { folderId: routine.folderId }})}
                         onDragEnd={handleDragEnd}
                         onDrop={handleItemDrop}
+                        // Fix: Pass the correct handler function for touch start events.
                         onTouchStart={handleTouchStart}
                         isDragging={draggingItem?.type === 'routine' && draggingItem.id === routine.id}
                         isTouchDevice={isTouchDevice}
@@ -829,7 +830,7 @@ const RoutineItem: React.FC<RoutineItemProps> = ({ routine, onEdit, onDelete, on
     const routineRef = useRef<HTMLDivElement>(null);
     return (
         <React.Fragment>
-             {dropIndicator?.targetId === routine.id && dropIndicator.type === 'routine' && dropIndicator.position === 'top' && (
+             {dropIndicator && dropIndicator.targetId === routine.id && dropIndicator.type === 'routine' && dropIndicator.position === 'top' && (
                 <div className="h-1.5 bg-secondary rounded-full my-1"></div>
             )}
             <div 
@@ -881,7 +882,7 @@ const RoutineItem: React.FC<RoutineItemProps> = ({ routine, onEdit, onDelete, on
                     </p>
                 )}
             </div>
-             {dropIndicator?.targetId === routine.id && dropIndicator.type === 'routine' && dropIndicator.position === 'bottom' && (
+             {dropIndicator && dropIndicator.targetId === routine.id && dropIndicator.type === 'routine' && dropIndicator.position === 'bottom' && (
                 <div className="h-1.5 bg-secondary rounded-full my-1"></div>
             )}
         </React.Fragment>
@@ -1340,7 +1341,7 @@ const RoutineFormModal: React.FC<RoutineFormModalProps> = ({ onClose, onSave, ro
                                 
                                 return (
                                 <React.Fragment key={pex.dragId}>
-                                    {dropIndicator?.targetId === pex.dragId && dropIndicator.position === 'top' && (
+                                    {dropIndicator && dropIndicator.targetId === pex.dragId && dropIndicator.position === 'top' && (
                                         <div className="h-1.5 bg-secondary rounded-full my-1"></div>
                                     )}
                                     <div
@@ -1472,7 +1473,7 @@ const RoutineFormModal: React.FC<RoutineFormModalProps> = ({ onClose, onSave, ro
                                             </button>
                                         </div>
                                     </div>
-                                     {dropIndicator?.targetId === pex.dragId && dropIndicator.position === 'bottom' && (
+                                     {dropIndicator && dropIndicator.targetId === pex.dragId && dropIndicator.position === 'bottom' && (
                                         <div className="h-1.5 bg-secondary rounded-full my-1"></div>
                                     )}
                                 </React.Fragment>
