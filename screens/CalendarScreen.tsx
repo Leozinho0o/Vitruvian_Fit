@@ -1,8 +1,6 @@
-
-
 import React, { useState, useMemo, useCallback, Fragment, useRef, useEffect } from 'react';
 import { useApp } from '../App';
-import { WorkoutSession, Routine, Folder, PlannedExercise, Unit, Exercise, WorkoutSet } from '../types';
+import { WorkoutSession, Routine, Folder, PlannedExercise, Unit, Exercise, WorkoutSet, MeasurementType } from '../types';
 import { ChevronLeftIcon, ChevronRightIcon, PlayIcon, TrashIcon, XIcon, PlusIcon, PencilIcon, SearchIcon, MinusIcon } from '../components/Icons';
 import { getScaleOptions } from '../constants';
 import ConfirmationModal from '../components/ConfirmationModal';
@@ -122,17 +120,17 @@ const CalendarScreen: React.FC = () => {
     
     const handleSaveWorkout = (routineId: string, time: string) => {
         if (!selectedDate || !routineId) return;
-
+    
         const routine = routines.find((r: Routine) => r.id === routineId);
         if (!routine) return;
-
+    
         const year = selectedDate.getFullYear();
         const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
         const dayOfMonth = String(selectedDate.getDate()).padStart(2, '0');
         const dateString = `${year}-${month}-${dayOfMonth}`;
-
+    
         let workoutStartTime: string;
-
+    
         if (time) {
             const [hours, minutes] = time.split(':');
             workoutStartTime = `${dateString}T${hours}:${minutes}:00`;
@@ -140,13 +138,28 @@ const CalendarScreen: React.FC = () => {
             // Set to midnight of the local day to avoid timezone ambiguity
             workoutStartTime = `${dateString}T00:00:00`;
         }
-
+    
+        const originalPlan = JSON.parse(JSON.stringify(routine.plannedExercises || []));
+    
         const newSession: Omit<WorkoutSession, 'id'> = {
             routineId: routineId,
             date: dateString,
             startTime: workoutStartTime,
             endTime: null,
-            loggedExercises: JSON.parse(JSON.stringify(routine.plannedExercises || [])),
+            originalPlan: originalPlan,
+            loggedExercises: originalPlan.map((plannedEx: PlannedExercise, index: number) => ({
+                ...plannedEx,
+                sets: plannedEx.sets.map((set: WorkoutSet) => ({
+                    repsMin: set.repsMin,
+                    repsMax: set.repsMax,
+                    reps: undefined,
+                    time: undefined,
+                    value: undefined,
+                    effort: undefined,
+                    completed: false,
+                })),
+                tempId: `le-${Date.now()}-${index}`
+            })),
             completed: false,
         };
         logWorkout(newSession);
@@ -611,6 +624,9 @@ const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({ workout, routin
     const isCompleted = workout.completed;
     const durationString = formatDuration(workout.duration);
 
+    // For planned workouts, use the original plan. For completed, use the logged exercises.
+    const exercisesToDisplay = isCompleted ? workout.loggedExercises : (workout.originalPlan || []);
+
     return (
          <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
             <div className="bg-light-card dark:bg-dark-card rounded-lg p-6 w-11/12 max-w-sm text-light-text dark:text-dark-text max-h-[90vh] flex flex-col">
@@ -642,7 +658,7 @@ const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({ workout, routin
                     <h4 className="font-semibold text-light-text dark:text-dark-text">
                         {isCompleted ? "Exercícios Realizados:" : "Exercícios Planejados:"}
                     </h4>
-                    {(workout.loggedExercises || []).map((plannedEx, idx) => {
+                    {(exercisesToDisplay).map((plannedEx, idx) => {
                         const exercise = exercises.find(e => e.id === plannedEx.exerciseId);
                         if (!exercise) return <div key={idx} className="text-sm text-red-500">Exercício não encontrado</div>;
 
@@ -660,34 +676,44 @@ const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({ workout, routin
                                     {plannedEx.sets.map((set, index) => {
                                         const effortLabel = scaleOptions?.find(opt => opt.value === set.effort)?.label;
                                         
-                                        let setInfo = '';
+                                        const setInfoParts = [];
+
+                                        // Part 1: Reps or Time
                                         if (isCompleted) {
-                                            // For completed workouts, prioritize actual logged data.
                                             if (set.reps !== undefined) {
-                                                setInfo = `${set.reps} reps`;
+                                                setInfoParts.push(`${set.reps} reps`);
                                             } else if (set.time !== undefined) {
-                                                setInfo = formatSecondsToMMSS(set.time);
+                                                setInfoParts.push(formatSecondsToMMSS(set.time));
                                             }
-                                        } else {
-                                            // For planned workouts, show the plan.
-                                            if (set.repsMin !== undefined || set.repsMax !== undefined) {
-                                                if (set.repsMin !== undefined && set.repsMax !== undefined) {
-                                                    setInfo = `${set.repsMin} a ${set.repsMax} reps`;
-                                                } else {
-                                                    setInfo = `${set.repsMin ?? set.repsMax} reps`;
+                                        } else { // Planned
+                                            if (exercise.measurementType === MeasurementType.COUNT) {
+                                                if (set.repsMin !== undefined || set.repsMax !== undefined) {
+                                                    if (set.repsMin !== undefined && set.repsMax !== undefined && set.repsMin !== set.repsMax) {
+                                                        setInfoParts.push(`${set.repsMin}-${set.repsMax} reps`);
+                                                    } else {
+                                                        setInfoParts.push(`${set.repsMin ?? set.repsMax} reps`);
+                                                    }
+                                                } else if (set.reps !== undefined) {
+                                                    setInfoParts.push(`${set.reps} reps`);
                                                 }
-                                            } else if (set.reps !== undefined) {
-                                                setInfo = `${set.reps} reps`;
-                                            } else if (set.time !== undefined) {
-                                                setInfo = formatSecondsToMMSS(set.time);
+                                            } else { // MeasurementType.TIME
+                                                if (set.time !== undefined) {
+                                                    setInfoParts.push(formatSecondsToMMSS(set.time));
+                                                }
                                             }
                                         }
 
+                                        // Part 2: Value and Unit
+                                        if (set.value != null && exercise.unit !== Unit.NONE) {
+                                            setInfoParts.push(`${set.value} ${exercise.unit}`);
+                                        }
+
+                                        const setInfo = setInfoParts.join(' com ');
+                                        
                                         return (
                                             <div key={index}>
                                                 <p className={set.completed ? 'line-through opacity-60' : ''}>
-                                                    Série {index + 1}: {setInfo}
-                                                    {set.value != null && ` com ${set.value} ${exercise.unit !== Unit.NONE ? exercise.unit : ''}`}
+                                                    Série {index + 1}: {setInfo || (isCompleted ? "Não registrado" : "Não planejado")}
                                                 </p>
                                                 {effortLabel && (
                                                      <p className="text-xs pl-4 italic text-pink-500 dark:text-pink-400">

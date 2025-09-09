@@ -61,9 +61,9 @@ export const BarChart: React.FC<{ data: ChartData[]; isStacked?: boolean; unit: 
                                 {item.details && (
                                     <ul className="list-none text-left space-y-1">
                                         {item.details.map((detail, i) => (
-                                            <li key={i} className="whitespace-nowrap flex items-center">
-                                                <span className="h-2 w-2 rounded-full mr-2 flex-shrink-0" style={{ backgroundColor: detail.color }}></span>
-                                                <span>{detail.name}: {detail.value} {unit}</span>
+                                            <li key={i} className="flex items-start">
+                                                <span className="h-2 w-2 rounded-full mr-2 mt-1 flex-shrink-0" style={{ backgroundColor: detail.color }}></span>
+                                                <span className="break-words">{detail.name}: {detail.value} {unit}</span>
                                             </li>
                                         ))}
                                     </ul>

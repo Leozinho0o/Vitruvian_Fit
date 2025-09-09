@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../App';
 import { Exercise, Unit, ExerciseCategory } from '../types';
@@ -300,7 +301,7 @@ const PhysicalTestsScreen: React.FC = () => {
                                 <div className="text-center text-xs text-light-text-secondary dark:text-dark-text-secondary">
                                     *Cálculo baseado em séries com esforço (PSE/RIR) igual ou superior a 9.
                                 </div>
-                                <div className="h-64 pl-4 pr-2">
+                                <div className="h-72 pt-8 pl-4 pr-2 overflow-x-auto">
                                     <BarChart data={filteredHistoryData} unit="kg" />
                                 </div>
 

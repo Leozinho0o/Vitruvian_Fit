@@ -301,7 +301,8 @@ const App: React.FC = () => {
 
     const logWorkout = useCallback((session: Omit<WorkoutSession, 'id'>) => {
         setWorkouts(prev => [...prev, { ...session, id: `ws${Date.now()}` }]);
-    }, [setWorkouts]);
+        setActiveWorkoutSession(null);
+    }, [setWorkouts, setActiveWorkoutSession]);
     
     const updateWorkout = useCallback((updatedWorkout: WorkoutSession) => {
         setWorkouts(prevWorkouts => prevWorkouts.map(w => w.id === updatedWorkout.id ? updatedWorkout : w));
