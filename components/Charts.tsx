@@ -29,55 +29,57 @@ export const BarChart: React.FC<{ data: ChartData[]; isStacked?: boolean; unit: 
                 <span>0 {unit}</span>
             </div>
             
-            <div style={chartContainerStyle} className="h-full w-full flex flex-col">
-                <div className="flex-grow flex justify-around items-end gap-2 border-l border-b border-light-border dark:border-dark-border pl-2 pb-1">
-                    {data.map((item, index) => (
-                        <div key={index} className="flex flex-col items-center flex-1 h-full justify-end group relative">
-                            <div
-                                className="w-full flex flex-col rounded-t-md overflow-hidden"
-                                aria-label={`${item.label}: ${item.value} ${unit}`}
-                                style={{ height: `${(item.value / maxValue) * 100}%` }}
-                            >
-                                {isStacked && item.details && item.details.length > 1 ? (
-                                    item.details.map((detail, detailIndex) => (
+            <div className="h-full w-full">
+                <div style={chartContainerStyle} className="h-full w-full flex flex-col">
+                    <div className="flex-grow flex justify-around items-end gap-2 border-l border-b border-light-border dark:border-dark-border pl-2 pb-1">
+                        {data.map((item, index) => (
+                            <div key={index} className="flex flex-col items-center flex-1 h-full justify-end group relative">
+                                <div
+                                    className="w-full flex flex-col rounded-t-md overflow-hidden"
+                                    aria-label={`${item.label}: ${item.value} ${unit}`}
+                                    style={{ height: `${(item.value / maxValue) * 100}%` }}
+                                >
+                                    {isStacked && item.details && item.details.length > 1 ? (
+                                        item.details.map((detail, detailIndex) => (
+                                            <div
+                                                key={detailIndex}
+                                                className={`w-full transition-all group-hover:opacity-80 ${detailIndex < (item.details?.length || 0) - 1 ? 'border-b-2 border-black' : ''}`}
+                                                style={{
+                                                    height: `${(detail.value / item.value) * 100}%`,
+                                                    backgroundColor: detail.color,
+                                                }}
+                                            />
+                                        ))
+                                    ) : (
                                         <div
-                                            key={detailIndex}
-                                            className={`w-full transition-all group-hover:opacity-80 ${detailIndex < (item.details?.length || 0) - 1 ? 'border-b-2 border-black' : ''}`}
-                                            style={{
-                                                height: `${(detail.value / item.value) * 100}%`,
-                                                backgroundColor: detail.color,
-                                            }}
+                                            className="w-full h-full"
+                                            style={{ backgroundColor: item.details?.[0]?.color || '#3B82F6' }}
                                         />
-                                    ))
-                                ) : (
-                                    <div
-                                        className="w-full h-full"
-                                        style={{ backgroundColor: item.details?.[0]?.color || '#3B82F6' }}
-                                    />
-                                )}
+                                    )}
+                                </div>
+                                <div className="absolute bottom-full mb-2 w-max max-w-xs p-2 bg-dark-bg text-dark-text text-xs rounded-md shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none left-1/2 -translate-x-1/2 z-10">
+                                    <p className="font-bold border-b border-dark-border pb-1 mb-1 text-left">{item.label}: {item.value} {unit}</p>
+                                    {item.details && (
+                                        <ul className="list-none text-left space-y-1">
+                                            {item.details.map((detail, i) => (
+                                                <li key={i} className="flex items-start">
+                                                    <span className="h-2 w-2 rounded-full mr-2 mt-1 flex-shrink-0" style={{ backgroundColor: detail.color }}></span>
+                                                    <span className="break-words">{detail.name}: {detail.value} {unit}</span>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
+                                </div>
                             </div>
-                            <div className="absolute bottom-full mb-2 w-max max-w-xs p-2 bg-dark-bg text-dark-text text-xs rounded-md shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none left-1/2 -translate-x-1/2 z-10">
-                                <p className="font-bold border-b border-dark-border pb-1 mb-1 text-left">{item.label}: {item.value} {unit}</p>
-                                {item.details && (
-                                    <ul className="list-none text-left space-y-1">
-                                        {item.details.map((detail, i) => (
-                                            <li key={i} className="flex items-start">
-                                                <span className="h-2 w-2 rounded-full mr-2 mt-1 flex-shrink-0" style={{ backgroundColor: detail.color }}></span>
-                                                <span className="break-words">{detail.name}: {detail.value} {unit}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                )}
+                        ))}
+                    </div>
+                     <div className="flex-shrink-0 flex justify-around items-start pt-1">
+                        {data.map((item, index) => (
+                            <div key={index} className="flex-1 text-center text-xs text-light-text-secondary dark:text-dark-text-secondary break-words px-1" title={item.label} aria-hidden="true">
+                                {item.label}
                             </div>
-                        </div>
-                    ))}
-                </div>
-                 <div className="flex-shrink-0 flex justify-around items-start pt-1">
-                    {data.map((item, index) => (
-                        <div key={index} className="flex-1 text-center text-xs text-light-text-secondary dark:text-dark-text-secondary break-words px-1" title={item.label} aria-hidden="true">
-                            {item.label}
-                        </div>
-                    ))}
+                        ))}
+                    </div>
                 </div>
             </div>
         </div>

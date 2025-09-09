@@ -256,122 +256,124 @@ const PhysicalTestsScreen: React.FC = () => {
                     <XIcon className="h-6 w-6 text-light-text-secondary dark:text-dark-text-secondary" />
                 </button>
             </header>
-            <main className="flex-grow overflow-y-auto p-4 md:p-6 space-y-6">
-                <AccordionSection title="Teste de 1RM baseado em repetições múltiplas" isOpen={is1rmMultiRepOpen} onToggle={() => setIs1rmMultiRepOpen(v => !v)}>
-                    <div className="space-y-4">
-                        <div>
-                            <label className="block text-sm font-medium mb-1">Exercício</label>
-                            <button
-                                onClick={() => setIsExercisePickerOpen(true)}
-                                className="w-full h-10 flex items-center justify-between bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2 text-left"
-                            >
-                                <span className={selectedExercise ? 'text-light-text dark:text-dark-text' : 'text-light-text-secondary dark:text-dark-text-secondary'}>
-                                    {selectedExercise?.name || 'Selecione um exercício...'}
-                                </span>
-                                <SearchIcon className="h-5 w-5 text-light-text-secondary dark:text-dark-text-secondary" />
-                            </button>
-                        </div>
-                        {selectedExercise && (
-                            <>
-                                <div className="flex flex-col sm:flex-row gap-4 justify-center items-center pt-4">
-                                    <div>
-                                        <label htmlFor="startDate" className="block text-xs font-medium mb-1">De:</label>
-                                        <input
-                                            type="date"
-                                            id="startDate"
-                                            value={startDate}
-                                            onChange={(e) => setStartDate(e.target.value)}
-                                            className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2 text-sm"
-                                            max={endDate}
-                                        />
+            <main className="flex-grow overflow-y-auto overflow-x-auto p-4 md:p-6 space-y-6">
+                <div className="inline-block min-w-full space-y-6">
+                    <AccordionSection title="Teste de 1RM baseado em repetições múltiplas" isOpen={is1rmMultiRepOpen} onToggle={() => setIs1rmMultiRepOpen(v => !v)}>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium mb-1">Exercício</label>
+                                <button
+                                    onClick={() => setIsExercisePickerOpen(true)}
+                                    className="w-full h-10 flex items-center justify-between bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2 text-left"
+                                >
+                                    <span className={selectedExercise ? 'text-light-text dark:text-dark-text' : 'text-light-text-secondary dark:text-dark-text-secondary'}>
+                                        {selectedExercise?.name || 'Selecione um exercício...'}
+                                    </span>
+                                    <SearchIcon className="h-5 w-5 text-light-text-secondary dark:text-dark-text-secondary" />
+                                </button>
+                            </div>
+                            {selectedExercise && (
+                                <>
+                                    <div className="flex flex-col sm:flex-row gap-4 justify-center items-center pt-4">
+                                        <div>
+                                            <label htmlFor="startDate" className="block text-xs font-medium mb-1">De:</label>
+                                            <input
+                                                type="date"
+                                                id="startDate"
+                                                value={startDate}
+                                                onChange={(e) => setStartDate(e.target.value)}
+                                                className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2 text-sm"
+                                                max={endDate}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label htmlFor="endDate" className="block text-xs font-medium mb-1">Até:</label>
+                                            <input
+                                                type="date"
+                                                id="endDate"
+                                                value={endDate}
+                                                onChange={(e) => setEndDate(e.target.value)}
+                                                className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2 text-sm"
+                                                min={startDate}
+                                                max={formatDateForInput(new Date())}
+                                            />
+                                        </div>
                                     </div>
-                                    <div>
-                                        <label htmlFor="endDate" className="block text-xs font-medium mb-1">Até:</label>
-                                        <input
-                                            type="date"
-                                            id="endDate"
-                                            value={endDate}
-                                            onChange={(e) => setEndDate(e.target.value)}
-                                            className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2 text-sm"
-                                            min={startDate}
-                                            max={formatDateForInput(new Date())}
-                                        />
+                                    <div className="text-center text-xs text-light-text-secondary dark:text-dark-text-secondary">
+                                        *Cálculo baseado em séries com esforço (PSE/RIR) igual ou superior a 9.
                                     </div>
-                                </div>
-                                <div className="text-center text-xs text-light-text-secondary dark:text-dark-text-secondary">
-                                    *Cálculo baseado em séries com esforço (PSE/RIR) igual ou superior a 9.
-                                </div>
-                                <div className="h-72 pt-8 pl-4 pr-2 overflow-x-auto">
-                                    <BarChart data={filteredHistoryData} unit="kg" />
-                                </div>
+                                    <div className="h-72 pt-8 pl-4 pr-2">
+                                        <BarChart data={filteredHistoryData} unit="kg" />
+                                    </div>
 
-                                {highest1RM && bestSet && (
-                                    <div className="mt-8 border-t border-light-border dark:border-dark-border pt-6 space-y-4">
-                                        <div className="text-center bg-light-bg dark:bg-dark-bg p-4 rounded-lg">
-                                            <p className="text-sm font-semibold text-light-text dark:text-dark-text">Maior Estimativa de 1 Repetição Máxima (1RM) já registrada</p>
-                                            <p className="text-4xl font-bold text-primary">{highest1RM.value}<span className="text-2xl font-medium"> kg</span></p>
-                                        </div>
-                                        
-                                        <div className="text-center bg-light-bg dark:bg-dark-bg p-4 rounded-lg">
-                                            <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary">Baseado no registro de</p>
-                                            <p className="text-2xl font-bold text-secondary">{bestSet.weight.toFixed(1)}kg <span className="font-normal">para</span> {bestSet.reps} reps</p>
-                                        </div>
-                                        
-                                        <div className="mb-4">
-                                            <label htmlFor="1rm-selector-test" className="block text-sm font-medium mb-1">Basear estimativa no 1RM de:</label>
-                                            <select
-                                                id="1rm-selector-test"
-                                                value={selected1RMForTable ?? ''}
-                                                onChange={(e) => setSelected1RMForTable(Number(e.target.value))}
-                                                className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2"
-                                            >
-                                                <option value={highest1RM.value}>
-                                                    Maior Registrado: {highest1RM.value} kg
-                                                </option>
-                                                {oneRmHistory.slice().reverse().map((record, index) => (
-                                                    <option key={`${record.date}-${index}`} value={record.value}>
-                                                        {record.label}: {record.value} kg
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </div>
-
-                                        {selected1RMForTable && (
-                                            <div className="overflow-x-auto">
-                                                <table className="w-full text-sm text-left text-light-text-secondary dark:text-dark-text-secondary">
-                                                    <thead className="text-xs text-light-text dark:text-dark-text uppercase bg-light-bg dark:bg-dark-bg">
-                                                        <tr>
-                                                            <th scope="col" className="px-4 py-2">% 1RM</th>
-                                                            <th scope="col" className="px-4 py-2">Carga (kg)</th>
-                                                            <th scope="col" className="px-4 py-2">Repetições Permitidas</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {repEstimationTableData.map(row => {
-                                                            const calculatedLoad = (row.percentage / 100) * selected1RMForTable;
-                                                            return (
-                                                                <tr key={row.percentage} className="border-b border-light-border dark:border-dark-border last:border-b-0">
-                                                                    <td className="px-4 py-2 font-medium text-light-text dark:text-dark-text">{row.percentage}%</td>
-                                                                    <td className="px-4 py-2">{calculatedLoad.toFixed(1)}</td>
-                                                                    <td className="px-4 py-2">{row.reps}</td>
-                                                                </tr>
-                                                            );
-                                                        })}
-                                                    </tbody>
-                                                </table>
+                                    {highest1RM && bestSet && (
+                                        <div className="mt-8 border-t border-light-border dark:border-dark-border pt-6 space-y-4">
+                                            <div className="text-center bg-light-bg dark:bg-dark-bg p-4 rounded-lg">
+                                                <p className="text-sm font-semibold text-light-text dark:text-dark-text">Maior Estimativa de 1 Repetição Máxima (1RM) já registrada</p>
+                                                <p className="text-4xl font-bold text-primary">{highest1RM.value}<span className="text-2xl font-medium"> kg</span></p>
                                             </div>
-                                        )}
-                                    </div>
-                                )}
-                            </>
-                        )}
-                    </div>
-                </AccordionSection>
-                <AccordionSection title="Teste de 1RM" isOpen={is1rmTestOpen} onToggle={() => setIs1rmTestOpen(v => !v)}>
-                    <div className="text-center text-light-text-secondary dark:text-dark-text-secondary p-4">
-                        <p>Em desenvolvimento.</p>
-                    </div>
-                </AccordionSection>
+                                            
+                                            <div className="text-center bg-light-bg dark:bg-dark-bg p-4 rounded-lg">
+                                                <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary">Baseado no registro de</p>
+                                                <p className="text-2xl font-bold text-secondary">{bestSet.weight.toFixed(1)}kg <span className="font-normal">para</span> {bestSet.reps} reps</p>
+                                            </div>
+                                            
+                                            <div className="mb-4">
+                                                <label htmlFor="1rm-selector-test" className="block text-sm font-medium mb-1">Basear estimativa no 1RM de:</label>
+                                                <select
+                                                    id="1rm-selector-test"
+                                                    value={selected1RMForTable ?? ''}
+                                                    onChange={(e) => setSelected1RMForTable(Number(e.target.value))}
+                                                    className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2"
+                                                >
+                                                    <option value={highest1RM.value}>
+                                                        Maior Registrado: {highest1RM.value} kg
+                                                    </option>
+                                                    {oneRmHistory.slice().reverse().map((record, index) => (
+                                                        <option key={`${record.date}-${index}`} value={record.value}>
+                                                            {record.label}: {record.value} kg
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            {selected1RMForTable && (
+                                                <div className="overflow-x-auto">
+                                                    <table className="w-full text-sm text-left text-light-text-secondary dark:text-dark-text-secondary">
+                                                        <thead className="text-xs text-light-text dark:text-dark-text uppercase bg-light-bg dark:bg-dark-bg">
+                                                            <tr>
+                                                                <th scope="col" className="px-4 py-2">% 1RM</th>
+                                                                <th scope="col" className="px-4 py-2">Carga (kg)</th>
+                                                                <th scope="col" className="px-4 py-2">Repetições Permitidas</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {repEstimationTableData.map(row => {
+                                                                const calculatedLoad = (row.percentage / 100) * selected1RMForTable;
+                                                                return (
+                                                                    <tr key={row.percentage} className="border-b border-light-border dark:border-dark-border last:border-b-0">
+                                                                        <td className="px-4 py-2 font-medium text-light-text dark:text-dark-text">{row.percentage}%</td>
+                                                                        <td className="px-4 py-2">{calculatedLoad.toFixed(1)}</td>
+                                                                        <td className="px-4 py-2">{row.reps}</td>
+                                                                    </tr>
+                                                                );
+                                                            })}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    </AccordionSection>
+                    <AccordionSection title="Teste de 1RM" isOpen={is1rmTestOpen} onToggle={() => setIs1rmTestOpen(v => !v)}>
+                        <div className="text-center text-light-text-secondary dark:text-dark-text-secondary p-4">
+                            <p>Em desenvolvimento.</p>
+                        </div>
+                    </AccordionSection>
+                </div>
             </main>
             {isExercisePickerOpen && (
                 <ExercisePickerModal 
