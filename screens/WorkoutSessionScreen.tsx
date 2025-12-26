@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp } from '../App';
 import { Exercise, WorkoutSession, LoggedExercise, WorkoutSet, MeasurementType, Unit, PerceivedExertionScale, ExerciseCategory, Evaluation, PlannedExercise } from '../types';
-import { ChevronLeftIcon, PlusIcon, TrashIcon, XIcon, CheckCircleIcon, ChevronDownIcon, DumbbellIcon, InfoIcon, GripVerticalIcon, SearchIcon, MinimizeIcon } from '../components/Icons';
+import { ChevronLeftIcon, PlusIcon, TrashIcon, XIcon, CheckCircleIcon, ChevronDownIcon, DumbbellIcon, InfoIcon, GripVerticalIcon, SearchIcon, MinimizeIcon, PlayIcon } from '../components/Icons';
 import { getScaleOptions } from '../constants';
 import ConfirmationModal from '../components/ConfirmationModal';
 import { formatSecondsToMMSS, formatDuration, parseTimeToSeconds, vibrate } from '../utils';
@@ -72,6 +72,7 @@ const WorkoutSessionScreen: React.FC = () => {
         setIsPhysicalEvaluationScreenOpen
     } = useApp();
     
+    // We use a ref for original plan to avoid placeholders changing if the session object is updated by typing
     const originalPlanRef = useRef(activeWorkoutSession?.originalPlan || []);
     
     const [now, setNow] = useState(() => Date.now());
@@ -86,6 +87,7 @@ const WorkoutSessionScreen: React.FC = () => {
     const lastClientY = useRef<number>(0);
     const [isExercisePickerOpen, setIsExercisePickerOpen] = useState(false);
     const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
+    const [isFinishConfirmOpen, setIsFinishConfirmOpen] = useState(false);
 
     const routine = useMemo(() => {
         if (activeWorkoutSession?.routineId === 'internal_test') {
@@ -373,15 +375,16 @@ const WorkoutSessionScreen: React.FC = () => {
                 set.completed = isNowCompleting;
                 if (isNowCompleting) vibrate();
                 
+                // If filling automatically, only overwrite if currently undefined/null to avoid data loss during edits
                 if (isNowCompleting) {
                     const isCountType = exercise?.measurementType === MeasurementType.COUNT;
                     if (isCountType) {
-                        if (set.reps === undefined) set.reps = originalSet.repsMin ?? originalSet.reps;
+                        if (set.reps == null) set.reps = originalSet.repsMin ?? originalSet.reps;
                     } else {
-                        if (set.time === undefined) set.time = originalSet.time;
+                        if (set.time == null) set.time = originalSet.time;
                     }
-                    if (set.value === undefined) set.value = originalSet.value;
-                    if (set.effort === undefined) set.effort = originalSet.effort;
+                    if (set.value == null) set.value = originalSet.value;
+                    if (set.effort == null) set.effort = originalSet.effort;
                 }
                 newSets[setIndex] = set;
                 return { ...log, sets: newSets };
@@ -392,7 +395,33 @@ const WorkoutSessionScreen: React.FC = () => {
 
     const handleFinishWorkout = () => {
         if (!activeWorkoutSession) return;
+        
+        // Final clean: remove tempIds and filter out entirely empty sets
+        const cleanedLoggedExercises = activeWorkoutSession.loggedExercises
+            .map(({ tempId, ...log }) => ({
+                ...log,
+                sets: log.sets.filter(set => Object.values(set).some(v => v != null && v !== false && v !== ''))
+            }))
+            .filter(log => log.sets.length > 0);
+
+        if (cleanedLoggedExercises.length === 0) {
+            const isNewWorkout = activeWorkoutSession.id.startsWith('ws_temp_') || activeWorkoutSession.id.startsWith('ws_test_');
+            if (window.confirm("Nenhum exercício foi registrado. O treino não será salvo. Deseja continuar?")) {
+                if (!isNewWorkout) deleteWorkout(activeWorkoutSession.id);
+                setActiveWorkoutSession(null);
+                setIsWorkoutMinimized(false);
+            }
+            return;
+        }
+
+        // Se houver exercícios registrados, abre o modal de confirmação customizado
+        setIsFinishConfirmOpen(true);
+    };
+
+    const confirmFinishWorkout = () => {
+        if (!activeWorkoutSession) return;
         vibrate([100, 50, 100]);
+        
         const cleanedLoggedExercises = activeWorkoutSession.loggedExercises
             .map(({ tempId, ...log }) => ({
                 ...log,
@@ -403,17 +432,8 @@ const WorkoutSessionScreen: React.FC = () => {
         const isNewWorkout = activeWorkoutSession.id.startsWith('ws_temp_') || activeWorkoutSession.id.startsWith('ws_test_');
         const workoutDuration = elapsedTime;
 
-        if (cleanedLoggedExercises.length === 0) {
-            if (window.confirm("Nenhum exercício foi registrado. O treino não será salvo. Deseja continuar?")) {
-                if (!isNewWorkout) deleteWorkout(activeWorkoutSession.id);
-                setActiveWorkoutSession(null);
-                setIsWorkoutMinimized(false);
-            }
-            return;
-        }
-        
         if (isNewWorkout) {
-            const { id, originalPlan, ...sessionData } = activeWorkoutSession;
+            const { id, ...sessionData } = activeWorkoutSession;
             const finalSession: Omit<WorkoutSession, 'id'> = {
                 ...sessionData,
                 loggedExercises: cleanedLoggedExercises,
@@ -423,7 +443,7 @@ const WorkoutSessionScreen: React.FC = () => {
             };
             logWorkout(finalSession);
         } else {
-            const { originalPlan, ...sessionData } = activeWorkoutSession;
+            const { ...sessionData } = activeWorkoutSession;
             const updatedSession: WorkoutSession = {
                 ...sessionData,
                 loggedExercises: cleanedLoggedExercises,
@@ -434,6 +454,7 @@ const WorkoutSessionScreen: React.FC = () => {
             updateWorkout(updatedSession);
         }
         setIsWorkoutMinimized(false);
+        setIsFinishConfirmOpen(false);
     };
     
     const handleCancelWorkout = () => setIsCancelConfirmOpen(true);
@@ -449,8 +470,22 @@ const WorkoutSessionScreen: React.FC = () => {
         setActiveWorkoutSession({
             ...activeWorkoutSession,
             startTime: newStartTime.toISOString(),
-            duration: undefined,
+            duration: activeWorkoutSession.completed ? newTimeInSeconds : undefined,
         });
+    };
+
+    const handleResumeTimer = (currentSeconds: number) => {
+        if (!activeWorkoutSession) return;
+        vibrate();
+        const newStartTime = new Date(Date.now() - currentSeconds * 1000);
+        setActiveWorkoutSession({
+            ...activeWorkoutSession,
+            completed: false,
+            endTime: null,
+            duration: undefined,
+            startTime: newStartTime.toISOString(),
+        });
+        setIsTimerEditModalOpen(false);
     };
 
     if (!activeWorkoutSession || !routine) {
@@ -641,7 +676,8 @@ const WorkoutSessionScreen: React.FC = () => {
             </footer>
             {isExercisePickerOpen && (<ExercisePickerModal onClose={() => setIsExercisePickerOpen(false)} onSelect={handleAddExercise} allExercises={exercises} />)}
             {isCancelConfirmOpen && (<ConfirmationModal isOpen={isCancelConfirmOpen} onClose={() => setIsCancelConfirmOpen(false)} onConfirm={confirmAndCancelWorkout} title="Cancelar Treino" message="Tem certeza que deseja cancelar o treino? O progresso não salvo será perdido." confirmText="Sim" cancelText="Não" />)}
-            {isTimerEditModalOpen && (<TimerEditModal isOpen={isTimerEditModalOpen} onClose={() => setIsTimerEditModalOpen(false)} onSave={handleEditTimer} initialTime={elapsedTime} />)}
+            {isFinishConfirmOpen && (<ConfirmationModal isOpen={isFinishConfirmOpen} onClose={() => setIsFinishConfirmOpen(false)} onConfirm={confirmFinishWorkout} title="Concluir Treino" message="Deseja finalizar e salvar este treino?" confirmText="Sim, Concluir" cancelText="Ainda não" variant="info" />)}
+            {isTimerEditModalOpen && (<TimerEditModal isOpen={isTimerEditModalOpen} onClose={() => setIsTimerEditModalOpen(false)} onSave={handleEditTimer} onResume={handleResumeTimer} initialTime={elapsedTime} isCompleted={!!activeWorkoutSession.completed} />)}
             {infoExercise && (<ExerciseInfoModal exercise={infoExercise} onClose={() => setInfoExercise(null)} />)}
         </div>
     );
@@ -651,9 +687,11 @@ interface TimerEditModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSave: (newTimeInSeconds: number) => void;
+    onResume: (currentSeconds: number) => void;
     initialTime: number;
+    isCompleted: boolean;
 }
-const TimerEditModal: React.FC<TimerEditModalProps> = ({ isOpen, onClose, onSave, initialTime }) => {
+const TimerEditModal: React.FC<TimerEditModalProps> = ({ isOpen, onClose, onSave, onResume, initialTime, isCompleted }) => {
     const [newTime, setNewTime] = useState<number | undefined>(initialTime);
 
     if (!isOpen) return null;
@@ -663,6 +701,12 @@ const TimerEditModal: React.FC<TimerEditModalProps> = ({ isOpen, onClose, onSave
             onSave(newTime);
         }
         onClose();
+    };
+
+    const handleResume = () => {
+        if (newTime !== undefined) {
+            onResume(newTime);
+        }
     };
 
     return (
@@ -685,6 +729,18 @@ const TimerEditModal: React.FC<TimerEditModalProps> = ({ isOpen, onClose, onSave
                             className="w-full text-center text-2xl font-bold bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2"
                         />
                     </div>
+                    
+                    {isCompleted && (
+                        <button 
+                            type="button" 
+                            onClick={handleResume}
+                            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-md flex items-center justify-center transition-colors"
+                        >
+                            <PlayIcon className="h-5 w-5 mr-2" />
+                            Retomar Cronômetro
+                        </button>
+                    )}
+
                     <div className="pt-2 flex justify-end items-center space-x-3">
                         <button type="button" onClick={onClose} className="bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-700 text-gray-800 dark:text-white font-bold py-2 px-4 rounded-md">Cancelar</button>
                         <button type="button" onClick={handleSave} className="bg-secondary hover:bg-pink-700 text-white font-bold py-2 px-4 rounded-md">Salvar</button>

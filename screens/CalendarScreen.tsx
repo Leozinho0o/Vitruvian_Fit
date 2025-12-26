@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useCallback, Fragment, useRef, useEffect } from 'react';
 import { useApp } from '../App';
 import { WorkoutSession, Routine, Folder, PlannedExercise, Unit, Exercise, WorkoutSet, MeasurementType, ExerciseCategory } from '../types';
-import { ChevronLeftIcon, ChevronRightIcon, PlayIcon, TrashIcon, XIcon, PlusIcon, PencilIcon, SearchIcon, MinusIcon } from '../components/Icons';
+import { ChevronLeftIcon, ChevronRightIcon, PlayIcon, TrashIcon, XIcon, PlusIcon, PencilIcon, SearchIcon, MinusIcon, InfoIcon } from '../components/Icons';
 import { getScaleOptions } from '../constants';
 import ConfirmationModal from '../components/ConfirmationModal';
 import { formatSecondsToMMSS, formatDuration, vibrate } from '../utils';
@@ -53,7 +53,7 @@ const GhostWorkoutItem: React.FC<GhostWorkoutItemProps> = ({ routine, x, y }) =>
 
 
 const CalendarScreen: React.FC = () => {
-    const { routines, workouts, folders, logWorkout, updateWorkout, deleteWorkout, setActiveWorkoutSession, exercises } = useApp();
+    const { routines, workouts, folders, logWorkout, updateWorkout, deleteWorkout, setActiveWorkoutSession, activeWorkoutSession, exercises } = useApp();
     const [currentDate, setCurrentDate] = useState(new Date());
 
     const [selectedDate, setSelectedDate] = useState<Date | null>(null);
@@ -402,19 +402,29 @@ const CalendarScreen: React.FC = () => {
                     onDelete={() => setConfirmDeleteWorkoutId(selectedWorkout.id)}
                     onStart={() => {
                         if (selectedWorkout) {
+                            // Ensure every logged exercise has a tempId for identification in the session screen
+                            const workoutWithIds = {
+                                ...selectedWorkout,
+                                loggedExercises: selectedWorkout.loggedExercises.map((le, idx) => ({
+                                    ...le,
+                                    tempId: le.tempId || `le-edit-${Date.now()}-${idx}`
+                                }))
+                            };
+
                             if (!selectedWorkout.completed) {
                                 // For un-completed workouts, reset the start time to now.
                                 setActiveWorkoutSession({
-                                    ...selectedWorkout,
+                                    ...workoutWithIds,
                                     startTime: new Date().toISOString(),
                                 });
                             } else {
                                 // For completed ones, just open for editing.
-                                setActiveWorkoutSession(selectedWorkout);
+                                setActiveWorkoutSession(workoutWithIds);
                             }
                         }
                         setSelectedWorkout(null);
                     }}
+                    hasActiveSession={!!activeWorkoutSession}
                 />
             )}
             {confirmDeleteWorkoutId && (
@@ -534,7 +544,7 @@ const AddWorkoutModal: React.FC<AddWorkoutModalProps> = ({ onClose, onSave, date
                         </button>
 
                         {isPickerOpen && (
-                            <div className="absolute top-full mt-1 w-full max-h-60 bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-lg shadow-xl z-20 p-2">
+                            <div className="absolute top-full mt-1 w-full max-h-60 overflow-y-auto bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-lg shadow-xl z-20 p-2">
                                 <div className="relative mb-2">
                                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                         <SearchIcon className="h-5 w-5 text-light-text-secondary dark:text-dark-text-secondary" />
@@ -623,9 +633,10 @@ interface WorkoutDetailModalProps {
     onClose: () => void;
     onStart: () => void;
     onDelete: () => void;
+    hasActiveSession: boolean;
 }
 
-const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({ workout, routine, exercises, onClose, onStart, onDelete }) => {
+const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({ workout, routine, exercises, onClose, onStart, onDelete, hasActiveSession }) => {
     if(!routine) return null;
     
     const isCompleted = workout.completed;
@@ -636,7 +647,7 @@ const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({ workout, routin
 
     return (
          <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
-            <div className="bg-light-card dark:bg-dark-card rounded-lg p-6 w-11/12 max-w-sm text-light-text dark:text-dark-text max-h-[90vh] flex flex-col shadow-2xl">
+            <div className="bg-light-card dark:bg-dark-card rounded-lg p-6 w-11/12 max-sm text-light-text dark:text-dark-text max-h-[90vh] flex flex-col shadow-2xl">
                 <div className="flex justify-between items-center mb-4 flex-shrink-0">
                     <h3 className="text-lg font-bold flex items-center">
                         <span className="h-4 w-4 rounded-full mr-3" style={{backgroundColor: routine.color}}></span>
@@ -757,16 +768,25 @@ const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({ workout, routin
                 </div>
                 
                 <div className="space-y-4 mt-4 flex-shrink-0">
-                    {isCompleted ? (
-                         <button onClick={onStart} className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-3 px-4 rounded-md flex items-center justify-center text-lg">
-                            <PencilIcon className="h-6 w-6 mr-2" />
-                            Editar Treino
-                        </button>
+                    {hasActiveSession ? (
+                        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-3 rounded-lg flex items-start gap-3">
+                            <InfoIcon className="h-5 w-5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                            <p className="text-xs text-blue-800 dark:text-blue-300">
+                                Você já possui um treino em andamento. Finalize-o para iniciar ou editar outros registros.
+                            </p>
+                        </div>
                     ) : (
-                        <button onClick={onStart} className="w-full bg-secondary hover:bg-pink-700 text-white font-bold py-3 px-4 rounded-md flex items-center justify-center text-lg">
-                            <PlayIcon className="h-6 w-6 mr-2" />
-                            Iniciar Treino
-                        </button>
+                        isCompleted ? (
+                            <button onClick={onStart} className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-3 px-4 rounded-md flex items-center justify-center text-lg">
+                               <PencilIcon className="h-6 w-6 mr-2" />
+                               Editar Treino
+                           </button>
+                        ) : (
+                           <button onClick={onStart} className="w-full bg-secondary hover:bg-pink-700 text-white font-bold py-3 px-4 rounded-md flex items-center justify-center text-lg">
+                               <PlayIcon className="h-6 w-6 mr-2" />
+                               Iniciar Treino
+                           </button>
+                        )
                     )}
                      <button onClick={onDelete} className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-md flex items-center justify-center">
                         <TrashIcon className="h-5 w-5 mr-2" />
