@@ -1,5 +1,6 @@
+
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { View, Exercise, Routine, Folder, WorkoutSession, Theme, UserMeasurements, Evaluation, PlannedExercise, WorkoutSet } from './types';
+import { View, Exercise, Routine, Folder, WorkoutSession, Theme, UserMeasurements, Evaluation, PlannedExercise, WorkoutSet, ExerciseCategory, MeasurementType } from './types';
 import { INITIAL_EXERCISES, INITIAL_ROUTINES, INITIAL_FOLDERS, DEFAULT_MUSCLE_GROUPS } from './constants';
 import RoutinesScreen from './screens/RoutinesScreen';
 import CalendarScreen from './screens/CalendarScreen';
@@ -14,9 +15,9 @@ import MuscleGroupsScreen from './screens/MuscleGroupsScreen';
 import PhysicalEvaluationScreen from './screens/PhysicalEvaluationScreen';
 import PhysicalTestsScreen from './screens/PhysicalTestsScreen';
 import ConfirmationModal from './components/ConfirmationModal';
+import { formatDuration } from './utils';
 
-
-import { DumbbellIcon, RepeatIcon, CalendarIcon, BarChartIcon, SettingsIcon } from './components/Icons';
+import { DumbbellIcon, RepeatIcon, CalendarIcon, BarChartIcon, SettingsIcon, PlayIcon } from './components/Icons';
 
 export const AppContext = React.createContext<any>(null);
 
@@ -73,6 +74,7 @@ const App: React.FC = () => {
 
     // Active workout state - now persisted to localStorage
     const [activeWorkoutSession, setActiveWorkoutSession] = useLocalStorage<WorkoutSession | null>('vitruvian_fit_active_workout', null);
+    const [isWorkoutMinimized, setIsWorkoutMinimized] = useState(false);
 
     const [editingExercise, setEditingExercise] = useState<Exercise | 'new' | null>(null);
     const [isMeasurementsScreenOpen, setIsMeasurementsScreenOpen] = useState(false);
@@ -82,6 +84,12 @@ const App: React.FC = () => {
     const [selectedEvaluationDate, setSelectedEvaluationDate] = useState<string | null>(null);
     const [infoModalContent, setInfoModalContent] = useState<{ title: string; message: React.ReactNode; onConfirm?: () => void; confirmText?: string; showCancelButton?: boolean, cancelText?: string; } | null>(null);
 
+    // Auto-maximize when starting a new session
+    useEffect(() => {
+        if (activeWorkoutSession && !activeWorkoutSession.completed) {
+            setIsWorkoutMinimized(false);
+        }
+    }, [activeWorkoutSession?.id]);
 
     // Apply theme effect
     useEffect(() => {
@@ -227,9 +235,10 @@ const App: React.FC = () => {
         setRoutines(prev => prev.map(r => r.id === routineId ? { ...r, folderId } : r));
     }, [setRoutines]);
 
+    // Fix: Explicitly type prevRoutines to avoid unknown errors when accessing 'id' or 'folderId'
     const reorderRoutines = useCallback((draggedRoutineId: string, targetRoutineId: string, position: 'top' | 'bottom') => {
-        setRoutines(prevRoutines => {
-            const routinesCopy = Array.from(prevRoutines);
+        setRoutines((prevRoutines: Routine[]) => {
+            const routinesCopy = [...prevRoutines];
             const draggedIndex = routinesCopy.findIndex(r => r.id === draggedRoutineId);
             let targetIndex = routinesCopy.findIndex(r => r.id === targetRoutineId);
 
@@ -275,9 +284,10 @@ const App: React.FC = () => {
         setFolders(prev => prev.filter(f => f.id !== folderId));
     }, [setRoutines, setFolders]);
 
+    // Fix: Explicitly type prevFolders to avoid unknown errors when accessing 'id'
     const reorderFolders = useCallback((draggedFolderId: string, targetFolderId: string, position: 'top' | 'bottom') => {
-        setFolders(prevFolders => {
-            const foldersCopy = Array.from(prevFolders);
+        setFolders((prevFolders: Folder[]) => {
+            const foldersCopy = [...prevFolders];
             const draggedIndex = foldersCopy.findIndex(f => f.id === draggedFolderId);
             let targetIndex = foldersCopy.findIndex(f => f.id === targetFolderId);
 
@@ -302,11 +312,13 @@ const App: React.FC = () => {
     const logWorkout = useCallback((session: Omit<WorkoutSession, 'id'>) => {
         setWorkouts(prev => [...prev, { ...session, id: `ws${Date.now()}` }]);
         setActiveWorkoutSession(null);
+        setIsWorkoutMinimized(false);
     }, [setWorkouts, setActiveWorkoutSession]);
     
     const updateWorkout = useCallback((updatedWorkout: WorkoutSession) => {
         setWorkouts(prevWorkouts => prevWorkouts.map(w => w.id === updatedWorkout.id ? updatedWorkout : w));
         setActiveWorkoutSession(null); // After updating, close the session screen
+        setIsWorkoutMinimized(false);
     }, [setWorkouts, setActiveWorkoutSession]);
 
     const deleteWorkout = useCallback((sessionId: string) => {
@@ -370,7 +382,60 @@ const App: React.FC = () => {
         };
         
         setActiveWorkoutSession(newSession);
+        setIsWorkoutMinimized(false);
     }, [routines, exercises, evaluations, setActiveWorkoutSession, setActiveView, setIsPhysicalEvaluationScreenOpen]);
+
+    const startFiveMinTest = useCallback((exerciseId: string) => {
+        const ex = exercises.find(e => e.id === exerciseId);
+        if (!ex) return;
+
+        const newSession: WorkoutSession = {
+            id: `ws_test_5min_${Date.now()}`,
+            routineId: 'internal_test',
+            date: new Date().toISOString().split('T')[0],
+            startTime: new Date().toISOString(),
+            endTime: null,
+            loggedExercises: [{
+                exerciseId: ex.id,
+                tempId: `le-test-${Date.now()}`,
+                notes: 'Protocolo: Teste de 5 minutos',
+                sets: [{ time: 300, completed: false }]
+            }],
+            completed: false,
+        };
+        setActiveWorkoutSession(newSession);
+        setIsWorkoutMinimized(false);
+        setIsPhysicalTestsScreenOpen(false); // Fechar tela de testes para mostrar o treino
+    }, [exercises, setActiveWorkoutSession, setIsWorkoutMinimized, setIsPhysicalTestsScreenOpen]);
+
+    const startIncrementalTest = useCallback((exerciseId: string) => {
+        const ex = exercises.find(e => e.id === exerciseId);
+        if (!ex) return;
+
+        // Create 10 incremental stages of 1 minute each
+        const stages: WorkoutSet[] = Array.from({ length: 10 }, () => ({
+            time: 60,
+            completed: false,
+        }));
+
+        const newSession: WorkoutSession = {
+            id: `ws_test_inc_${Date.now()}`,
+            routineId: 'internal_test',
+            date: new Date().toISOString().split('T')[0],
+            startTime: new Date().toISOString(),
+            endTime: null,
+            loggedExercises: [{
+                exerciseId: ex.id,
+                tempId: `le-test-${Date.now()}`,
+                notes: 'Protocolo: Teste Incremental (Estágios de 1 minuto)',
+                sets: stages
+            }],
+            completed: false,
+        };
+        setActiveWorkoutSession(newSession);
+        setIsWorkoutMinimized(false);
+        setIsPhysicalTestsScreenOpen(false); // Fechar tela de testes para mostrar o treino
+    }, [exercises, setActiveWorkoutSession, setIsWorkoutMinimized, setIsPhysicalTestsScreenOpen]);
 
     const saveEvaluation = useCallback((evaluationToSave: Evaluation) => {
         setEvaluations(prev => {
@@ -393,6 +458,62 @@ const App: React.FC = () => {
         setEvaluations(prev => prev.filter(e => e.date !== dateToDelete));
     }, [setEvaluations]);
 
+    // Backup Functions
+    const exportData = useCallback(() => {
+        const data = {
+            version: '1.0',
+            app: 'Vitruvian Fit',
+            exportedAt: new Date().toISOString(),
+            exercises,
+            routines,
+            folders,
+            workouts,
+            muscleGroups,
+            evaluations
+        };
+        
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        const dateStr = new Date().toISOString().split('T')[0];
+        link.href = url;
+        link.download = `vitruvian_fit_backup_${dateStr}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }, [exercises, routines, folders, workouts, muscleGroups, evaluations]);
+
+    const importData = useCallback((file: File) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const content = e.target?.result as string;
+                const data = JSON.parse(content);
+                
+                // Simple validation
+                if (data.app !== 'Vitruvian Fit' || !Array.isArray(data.exercises)) {
+                    throw new Error('Arquivo de backup inválido.');
+                }
+
+                if (window.confirm('Isso irá sobrescrever todos os seus dados atuais. Deseja continuar?')) {
+                    setExercises(data.exercises || []);
+                    setRoutines(data.routines || []);
+                    setFolders(data.folders || []);
+                    setWorkouts(data.workouts || []);
+                    setMuscleGroups(data.muscleGroups || DEFAULT_MUSCLE_GROUPS);
+                    setEvaluations(data.evaluations || []);
+                    alert('Dados importados com sucesso!');
+                    window.location.reload(); // Refresh to ensure all components sync
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Erro ao importar backup: ' + (err instanceof Error ? err.message : 'Arquivo corrompido.'));
+            }
+        };
+        reader.readAsText(file);
+    }, [setExercises, setRoutines, setFolders, setWorkouts, setMuscleGroups, setEvaluations]);
+
     const contextValue = useMemo(() => ({
         exercises, setExercises,
         routines, setRoutines,
@@ -402,6 +523,7 @@ const App: React.FC = () => {
         evaluations,
         selectedEvaluationDate, setSelectedEvaluationDate,
         activeWorkoutSession, setActiveWorkoutSession,
+        isWorkoutMinimized, setIsWorkoutMinimized,
         editingExercise, setEditingExercise,
         isMeasurementsScreenOpen, setIsMeasurementsScreenOpen,
         isMuscleGroupsScreenOpen, setIsMuscleGroupsScreenOpen,
@@ -413,6 +535,9 @@ const App: React.FC = () => {
         updateExercise,
         deleteExercise,
         duplicateExercise,
+        addMuscleGroup,
+        editMuscleGroup,
+        deleteMuscleGroup,
         addRoutine,
         updateRoutine,
         deleteRoutine,
@@ -426,22 +551,23 @@ const App: React.FC = () => {
         logWorkout,
         updateWorkout,
         deleteWorkout,
-        addMuscleGroup,
-        editMuscleGroup,
-        deleteMuscleGroup,
         saveEvaluation,
         deleteEvaluation,
         startWorkoutFromRoutine,
+        startFiveMinTest,
+        startIncrementalTest,
+        exportData,
+        importData
     }), [
-        exercises, routines, folders, workouts, muscleGroups, evaluations, activeWorkoutSession, editingExercise, theme, isMeasurementsScreenOpen, isMuscleGroupsScreenOpen, isPhysicalEvaluationScreenOpen, isPhysicalTestsScreenOpen, selectedEvaluationDate,
+        exercises, routines, folders, workouts, muscleGroups, evaluations, activeWorkoutSession, isWorkoutMinimized, editingExercise, theme, isMeasurementsScreenOpen, isMuscleGroupsScreenOpen, isPhysicalEvaluationScreenOpen, isPhysicalTestsScreenOpen, selectedEvaluationDate,
         addExercise, updateExercise, deleteExercise, duplicateExercise,
+        addMuscleGroup, editMuscleGroup, deleteMuscleGroup,
         addRoutine, updateRoutine, deleteRoutine, duplicateRoutine, moveRoutineToFolder, reorderRoutines,
         addFolder, updateFolder, deleteFolder, reorderFolders,
         logWorkout, updateWorkout, deleteWorkout, 
-        addMuscleGroup, editMuscleGroup, deleteMuscleGroup,
         saveEvaluation, deleteEvaluation,
-        startWorkoutFromRoutine,
-        setExercises, setRoutines, setFolders, setWorkouts, setMuscleGroups, setEvaluations, setTheme, setInfoModalContent, setActiveWorkoutSession, setEditingExercise, setIsMeasurementsScreenOpen, setIsMuscleGroupsScreenOpen, setIsPhysicalEvaluationScreenOpen, setIsPhysicalTestsScreenOpen, setSelectedEvaluationDate,
+        startWorkoutFromRoutine, startFiveMinTest, startIncrementalTest, exportData, importData,
+        setExercises, setRoutines, setFolders, setWorkouts, setMuscleGroups, setEvaluations, setTheme, setInfoModalContent, setActiveWorkoutSession, setIsWorkoutMinimized, setEditingExercise, setIsMeasurementsScreenOpen, setIsMuscleGroupsScreenOpen, setIsPhysicalEvaluationScreenOpen, setIsPhysicalTestsScreenOpen, setSelectedEvaluationDate
     ]);
 
     const renderContent = () => {
@@ -457,7 +583,7 @@ const App: React.FC = () => {
         if (isMeasurementsScreenOpen) {
             return <MeasurementsScreen />;
         }
-        if (activeWorkoutSession) {
+        if (activeWorkoutSession && !isWorkoutMinimized) {
             return <WorkoutSessionScreen />;
         }
         if (editingExercise) {
@@ -477,14 +603,14 @@ const App: React.FC = () => {
         setActiveView(view);
     }
 
-    const isFullScreenView = activeWorkoutSession || editingExercise || isMeasurementsScreenOpen || isMuscleGroupsScreenOpen || isPhysicalEvaluationScreenOpen || isPhysicalTestsScreenOpen;
+    const isFullScreenView = (activeWorkoutSession && !isWorkoutMinimized) || editingExercise || isMeasurementsScreenOpen || isMuscleGroupsScreenOpen || isPhysicalEvaluationScreenOpen || isPhysicalTestsScreenOpen;
 
     return (
         <AppContext.Provider value={contextValue}>
             <div className="h-full w-full bg-light-bg dark:bg-dark-bg text-light-text dark:text-dark-text flex font-sans safe-left-padding safe-right-padding">
                 {!isFullScreenView && <Sidebar activeView={activeView} setActiveView={handleNavClick} />}
                 
-                <div className="flex-1 flex flex-col h-full w-full max-w-full md:max-w-5xl mx-auto xl:max-w-none xl:mx-0 shadow-2xl xl:shadow-none">
+                <div className="flex-1 flex flex-col h-full w-full max-w-full md:max-w-5xl mx-auto xl:max-w-none xl:mx-0 shadow-2xl xl:shadow-none relative">
                     {!isFullScreenView && (
                         <header className="flex-shrink-0 bg-light-card dark:bg-dark-card h-16 flex items-center justify-between px-4 xl:px-6 border-b border-light-border dark:border-dark-border safe-top-padding">
                             <h1 className="text-xl font-bold text-light-text dark:text-dark-text">
@@ -499,6 +625,14 @@ const App: React.FC = () => {
                     <main className="flex-grow min-h-0 overflow-y-auto bg-light-bg dark:bg-dark-bg">
                         {renderContent()}
                     </main>
+
+                    {!isFullScreenView && activeWorkoutSession && isWorkoutMinimized && (
+                        <MinimizedWorkoutBar 
+                            session={activeWorkoutSession} 
+                            routine={routines.find((r: Routine) => r.id === activeWorkoutSession.routineId)}
+                            onClick={() => setIsWorkoutMinimized(false)}
+                        />
+                    )}
 
                     {!isFullScreenView && (
                         <nav className="flex-shrink-0 bg-light-card dark:bg-dark-card h-20 flex justify-around items-center border-t border-light-border dark:border-dark-border xl:hidden safe-bottom-padding">
@@ -527,6 +661,38 @@ const App: React.FC = () => {
                 )}
             </div>
         </AppContext.Provider>
+    );
+};
+
+const MinimizedWorkoutBar: React.FC<{ session: WorkoutSession; routine: Routine | undefined; onClick: () => void }> = ({ session, routine, onClick }) => {
+    const [elapsed, setElapsed] = useState(0);
+
+    useEffect(() => {
+        const update = () => {
+            const startTimestamp = new Date(session.startTime).getTime();
+            setElapsed(Math.floor((Date.now() - startTimestamp) / 1000));
+        };
+        update();
+        const id = setInterval(update, 1000);
+        return () => clearInterval(id);
+    }, [session.startTime]);
+
+    return (
+        <div 
+            onClick={onClick}
+            className="mx-4 mb-2 bg-secondary text-white p-3 rounded-lg shadow-lg flex items-center justify-between cursor-pointer animate-bounce-subtle"
+        >
+            <div className="flex items-center">
+                <PlayIcon className="h-5 w-5 mr-3 fill-current" />
+                <div className="min-w-0">
+                    <p className="text-xs font-bold uppercase tracking-wider opacity-80">Treino em andamento</p>
+                    <p className="font-bold truncate">{routine?.name || 'Sessão de Treino'}</p>
+                </div>
+            </div>
+            <div className="text-xl font-black tabular-nums">
+                {formatDuration(elapsed)}
+            </div>
+        </div>
     );
 };
 

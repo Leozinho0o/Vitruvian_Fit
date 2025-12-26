@@ -1,10 +1,11 @@
 
 import React, { useMemo, useState } from 'react';
-import { Folder, Routine, Exercise, ExerciseCategory, Unit, MeasurementType, Evaluation } from '../types';
+import { Folder, Routine, Exercise, ExerciseCategory, Unit, MeasurementType, Evaluation, WorkoutSession } from '../types';
 import { useApp } from '../App';
-import { XIcon, BarChartIcon, FileTextIcon } from './Icons';
+import { XIcon, BarChartIcon, FileTextIcon, SettingsIcon } from './Icons';
 import { HorizontalBarChart, ChartData } from './Charts';
 import { parseEffortToNumber, getAverageReps } from '../utils';
+import CustomSelect from './CustomSelect';
 
 interface FolderStatsModalProps {
     folder: Folder;
@@ -22,25 +23,125 @@ const StatCard: React.FC<{ title: string; value: string; unit: string }> = ({ ti
 );
 
 const FolderStatsModal: React.FC<FolderStatsModalProps> = ({ folder, routines, exercises, evaluations, onClose }) => {
-    const { muscleGroups } = useApp();
+    const { muscleGroups, workouts } = useApp();
     const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+    
+    // Map of exerciseId -> selected testId for reference in this folder
+    const [selectedReferences, setSelectedReferences] = useState<Record<string, string>>({});
+
+    const routinesInFolder = useMemo(() => routines.filter(r => r.folderId === folder.id), [routines, folder.id]);
+
+    // Identify unique cardio exercises in the folder's routines
+    const cardioExercisesInFolder = useMemo(() => {
+        const foundIds = new Set<string>();
+        routinesInFolder.forEach(r => {
+            r.plannedExercises.forEach(pe => {
+                const ex = exercises.find(e => e.id === pe.exerciseId);
+                if (ex?.category === ExerciseCategory.CARDIO) {
+                    foundIds.add(pe.exerciseId);
+                }
+            });
+        });
+        return Array.from(foundIds).map(id => exercises.find(e => e.id === id)!).filter(Boolean);
+    }, [routinesInFolder, exercises]);
+
+    // Available reference tests for each exercise (copied from StatsScreen logic)
+    const availableTestsByExercise = useMemo(() => {
+        const map: Record<string, { value: string, label: string }[]> = {};
+        workouts.forEach(w => {
+            if (!w.completed || w.routineId !== 'internal_test') return;
+            const logEx = w.loggedExercises[0];
+            const notes = logEx?.notes || '';
+            if (notes.includes('5 minutos') || notes.includes('Incremental')) {
+                if (!map[logEx.exerciseId]) map[logEx.exerciseId] = [];
+                const type = notes.includes('5 minutos') ? '5min' : 'Inc';
+                map[logEx.exerciseId].push({
+                    value: w.id,
+                    label: `${new Date(`${w.date}T00:00:00`).toLocaleDateString('pt-BR')} - ${type}`
+                });
+            }
+        });
+        Object.keys(map).forEach(id => map[id].sort((a, b) => b.value.localeCompare(a.value)));
+        return map;
+    }, [workouts]);
 
     const folderStats = useMemo(() => {
-        const routinesInFolder = routines.filter(r => r.folderId === folder.id);
         const latestBodyMass = (evaluations && evaluations.length > 0) ? evaluations[0].measurements.bodyMass : undefined;
         
+        // 1. Calcular o 1RM máximo histórico (baseado em treinos reais concluídos)
+        const max1RMMap = new Map<string, number>();
+        workouts.filter((w: WorkoutSession) => w.completed).forEach((session: WorkoutSession) => {
+            session.loggedExercises.forEach(loggedEx => {
+                const ex = exercises.find(e => e.id === loggedEx.exerciseId);
+                if (!ex || ex.category !== ExerciseCategory.RESISTED || ex.unit !== Unit.KG) return;
+
+                loggedEx.sets.forEach(set => {
+                    const effortValue = parseEffortToNumber(set.effort);
+                    if (effortValue < 9) return; 
+
+                    const reps = set.reps ?? 0;
+                    const barbell = loggedEx.barbellWeight ?? 0;
+                    let load = (set.value ?? 0) + barbell;
+                    
+                    if (ex.isWeightDoubled) load *= 2;
+                    else if (ex.isCounterweight && latestBodyMass && load > 0) load = Math.max(0, latestBodyMass - load);
+                    
+                    if (reps > 0 && load > 0) {
+                        const est1RM = load * (1 + reps / 30);
+                        const currentMax = max1RMMap.get(ex.id) || 0;
+                        if (est1RM > currentMax) max1RMMap.set(ex.id, est1RM);
+                    }
+                });
+            });
+        });
+
+        // 2. Referências Cardio
+        const cardioRefIntensities: Record<string, number> = {};
+        Object.entries(selectedReferences).forEach(([exId, testId]) => {
+            const testW = workouts.find(w => w.id === testId);
+            if (!testW) return;
+            const tSet = testW.loggedExercises[0].sets;
+            const tNotes = testW.loggedExercises[0].notes || '';
+            let ref = 0;
+            if (tNotes.includes('5 minutos')) ref = tSet[0].value ?? 0;
+            else {
+                const comp = tSet.filter(s => s.completed);
+                ref = comp.length > 0 ? (comp[comp.length - 1].value ?? 0) : (tSet[0].value ?? 0);
+            }
+            if (ref > 0) cardioRefIntensities[exId] = ref;
+        });
+
+        // 3. Processar o PLANEJAMENTO
         let totalVolume = 0;
         let totalInternalLoadResisted = 0;
         let totalExternalLoadCardio = 0;
         let totalInternalLoadCardio = 0;
         let totalInternalLoadFlex = 0;
-        const seriesByMuscleResisted = new Map<string, number>();
+        
+        const intensityMapResisted = new Map<string, Record<string, number>>();
         const seriesByMuscleFlex = new Map<string, number>();
 
+        // Cardio Zonas
+        const cardioZones = {
+            'Supramáximo (>100%)': { time: 0, color: '#7F1D1D' },
+            'Máximo (100%)': { time: 0, color: '#EF4444' },
+            'Severo (85-99%)': { time: 0, color: '#F97316' },
+            'Pesado (63-84%)': { time: 0, color: '#F59E0B' },
+            'Moderado (45-62%)': { time: 0, color: '#10B981' },
+            'Leve (<45%)': { time: 0, color: '#3B82F6' },
+        };
+
         muscleGroups.forEach(m => {
-            seriesByMuscleResisted.set(m, 0);
+            intensityMapResisted.set(m, { 'Alta': 0, 'Moderada': 0, 'Leve': 0, 'Muito Leve': 0 });
             seriesByMuscleFlex.set(m, 0);
         });
+
+        const intensityColors: Record<string, string> = {
+            'Alta': '#EF4444',
+            'Moderada': '#DB2777',
+            'Leve': '#F59E0B',
+            'Muito Leve': '#3B82F6'
+        };
 
         for (const routine of routinesInFolder) {
             for (const plannedEx of routine.plannedExercises) {
@@ -48,6 +149,8 @@ const FolderStatsModal: React.FC<FolderStatsModalProps> = ({ folder, routines, e
                 if (!exercise) continue;
 
                 const uniqueMuscles = new Set([...exercise.primaryMuscles, ...exercise.secondaryMuscles]);
+                const max1RM = max1RMMap.get(exercise.id);
+                const cardioRef = cardioRefIntensities[exercise.id];
 
                 for (const set of plannedEx.sets) {
                     const effort = parseEffortToNumber(set.effort);
@@ -58,51 +161,74 @@ const FolderStatsModal: React.FC<FolderStatsModalProps> = ({ folder, routines, e
                             if (exercise.unit === Unit.KG) {
                                 const setValue = (set.value ?? 0) + (plannedEx.barbellWeight ?? 0);
                                 let calculatedLoad;
-            
-                                if (exercise.isCounterweight && latestBodyMass && setValue > 0) {
-                                    calculatedLoad = Math.max(0, latestBodyMass - setValue);
-                                } else {
-                                    calculatedLoad = exercise.isWeightDoubled ? (setValue * 2) : setValue;
-                                }
+                                if (exercise.isCounterweight && latestBodyMass && setValue > 0) calculatedLoad = Math.max(0, latestBodyMass - setValue);
+                                else calculatedLoad = exercise.isWeightDoubled ? (setValue * 2) : setValue;
                                 
                                 if (avgReps > 0 && calculatedLoad > 0) {
                                     totalVolume += avgReps * calculatedLoad;
                                     totalInternalLoadResisted += avgReps * calculatedLoad * effort;
                                 }
+
+                                let intensityCategory = 'Moderada';
+                                if (max1RM && max1RM > 0) {
+                                    const percentage = (calculatedLoad / max1RM) * 100;
+                                    if (percentage >= 85) intensityCategory = 'Alta';
+                                    else if (percentage >= 60) intensityCategory = 'Moderada';
+                                    else if (percentage >= 30) intensityCategory = 'Leve';
+                                    else intensityCategory = 'Muito Leve';
+                                }
+
+                                uniqueMuscles.forEach(m => {
+                                    if (intensityMapResisted.has(m)) intensityMapResisted.get(m)![intensityCategory]++;
+                                });
                             }
-                            uniqueMuscles.forEach(m => {
-                                seriesByMuscleResisted.set(m, (seriesByMuscleResisted.get(m) || 0) + 1);
-                            });
                         }
                     } else if (exercise.category === ExerciseCategory.CARDIO) {
-                        const avgReps = getAverageReps(set);
-                        const timeInMinutes = (set.time ?? 0) / 60;
+                        const timeInSeconds = set.time ?? 0;
+                        const timeInMinutes = timeInSeconds / 60;
                         const value = set.value ?? 0;
                         if (timeInMinutes > 0) {
                             totalInternalLoadCardio += timeInMinutes * effort;
-                            if (value > 0) {
-                                totalExternalLoadCardio += timeInMinutes * value;
+                            if (value > 0) totalExternalLoadCardio += timeInMinutes * value;
+
+                            // Cálculo de Zonas Cardio se houver referência
+                            if (cardioRef && value > 0) {
+                                const percentage = (value / cardioRef) * 100;
+                                let zoneKey: keyof typeof cardioZones;
+                                if (percentage > 100) zoneKey = 'Supramáximo (>100%)';
+                                else if (percentage >= 100) zoneKey = 'Máximo (100%)';
+                                else if (percentage >= 85) zoneKey = 'Severo (85-99%)';
+                                else if (percentage >= 63) zoneKey = 'Pesado (63-84%)';
+                                else if (percentage >= 45) zoneKey = 'Moderado (45-62%)';
+                                else zoneKey = 'Leve (<45%)';
+                                cardioZones[zoneKey].time += timeInSeconds;
                             }
                         }
                     } else if (exercise.category === ExerciseCategory.FLEXIBILITY) {
                         const avgReps = getAverageReps(set);
                         const baseValue = exercise.measurementType === MeasurementType.TIME ? ((set.time ?? 0) / 60) : avgReps;
-                        if (baseValue > 0) {
-                            totalInternalLoadFlex += baseValue * effort;
-                        }
-                         uniqueMuscles.forEach(m => {
-                            seriesByMuscleFlex.set(m, (seriesByMuscleFlex.get(m) || 0) + 1);
-                        });
+                        if (baseValue > 0) totalInternalLoadFlex += baseValue * effort;
+                        uniqueMuscles.forEach(m => seriesByMuscleFlex.set(m, (seriesByMuscleFlex.get(m) || 0) + 1));
                     }
                 }
             }
         }
         
-        const mapToChartData = (map: Map<string, number>): ChartData[] => {
-            return Array.from(map.entries())
-                .filter(([, value]) => value > 0)
-                .map(([label, value]) => ({ label, value }));
-        };
+        const resistedChartData: ChartData[] = Array.from(intensityMapResisted.entries())
+            .map(([muscle, counts]) => {
+                const total = Object.values(counts).reduce((a, b) => a + b, 0);
+                const details = Object.entries(counts).filter(([, val]) => val > 0).map(([name, value]) => ({ name, value, color: intensityColors[name] }));
+                return { label: muscle, value: total, details };
+            })
+            .filter(item => item.value > 0);
+
+        const flexibilityChartData: ChartData[] = Array.from(seriesByMuscleFlex.entries()).filter(([, value]) => value > 0).map(([label, value]) => ({ label, value }));
+
+        const cardioChartData: ChartData[] = Object.entries(cardioZones).map(([label, data]) => ({
+            label,
+            value: Math.round(data.time / 60),
+            details: [{ name: 'Duração', value: Math.round(data.time / 60), color: data.color }]
+        })).filter(item => item.value > 0);
 
         return {
             totalVolume: Math.round(totalVolume),
@@ -110,11 +236,12 @@ const FolderStatsModal: React.FC<FolderStatsModalProps> = ({ folder, routines, e
             totalExternalLoadCardio: Math.round(totalExternalLoadCardio),
             totalInternalLoadCardio: Math.round(totalInternalLoadCardio),
             totalInternalLoadFlex: Math.round(totalInternalLoadFlex),
-            seriesByMuscleResisted: mapToChartData(seriesByMuscleResisted),
-            seriesByMuscleFlex: mapToChartData(seriesByMuscleFlex),
+            seriesByMuscleResisted: resistedChartData,
+            seriesByMuscleFlex: flexibilityChartData,
+            cardioIntensityDistribution: cardioChartData
         };
 
-    }, [folder, routines, exercises, muscleGroups, evaluations]);
+    }, [routinesInFolder, exercises, muscleGroups, evaluations, workouts, selectedReferences]);
 
     const handleGeneratePdf = async () => {
         setIsGeneratingPdf(true);
@@ -128,7 +255,6 @@ const FolderStatsModal: React.FC<FolderStatsModalProps> = ({ folder, routines, e
             return;
         }
 
-        // Prepare for capture by hiding the button and expanding the content
         if (footer) footer.style.display = 'none';
         const originalCaptureMaxHeight = captureArea.style.maxHeight;
         const originalScrollOverflow = scrollContent.style.overflow;
@@ -136,7 +262,6 @@ const FolderStatsModal: React.FC<FolderStatsModalProps> = ({ folder, routines, e
         scrollContent.style.overflow = 'visible';
         scrollContent.style.height = 'auto';
 
-        // Allow DOM to update
         await new Promise(resolve => setTimeout(resolve, 100));
 
         try {
@@ -152,7 +277,6 @@ const FolderStatsModal: React.FC<FolderStatsModalProps> = ({ folder, routines, e
                 useCORS: true,
                 logging: false,
                 backgroundColor,
-                // These options are key to capturing the full scrollable content
                 height: captureArea.scrollHeight,
                 windowHeight: captureArea.scrollHeight,
             });
@@ -174,7 +298,6 @@ const FolderStatsModal: React.FC<FolderStatsModalProps> = ({ folder, routines, e
             console.error('Error generating PDF:', error);
             alert('Ocorreu um erro ao gerar o PDF. Tente novamente.');
         } finally {
-            // Restore original styles
             if (footer) footer.style.display = 'block';
             captureArea.style.maxHeight = originalCaptureMaxHeight;
             scrollContent.style.overflow = originalScrollOverflow;
@@ -184,7 +307,7 @@ const FolderStatsModal: React.FC<FolderStatsModalProps> = ({ folder, routines, e
     
     return (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
-            <div id="folder-stats-capture-area" className="bg-light-card dark:bg-dark-card rounded-lg p-6 w-full max-w-2xl max-h-[90vh] flex flex-col text-light-text dark:text-dark-text">
+            <div id="folder-stats-capture-area" className="bg-light-card dark:bg-dark-card rounded-lg p-6 w-full max-w-2xl max-h-[90vh] flex flex-col text-light-text dark:text-dark-text shadow-2xl">
                 <div className="flex justify-between items-center mb-4 flex-shrink-0">
                     <h3 className="text-xl font-bold flex items-center">
                         <BarChartIcon className="h-6 w-6 mr-3 text-primary" />
@@ -195,35 +318,87 @@ const FolderStatsModal: React.FC<FolderStatsModalProps> = ({ folder, routines, e
                     </button>
                 </div>
 
-                <div id="folder-stats-scroll-content" className="overflow-y-auto pr-2 space-y-6">
+                <div id="folder-stats-scroll-content" className="overflow-y-auto pr-2 space-y-8 pb-4">
                     <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary italic">
-                        Estes dados são uma estimativa baseada nas rotinas planejadas dentro desta pasta, não em treinos concluídos.
+                        Estes dados são uma estimativa baseada nas rotinas planejadas e no seu histórico de força (1RM) registrado em treinos anteriores.
                     </p>
+                    
                     {/* Resistido */}
                     <section>
-                        <h4 className="text-lg font-bold mb-3">Resistido</h4>
+                        <h4 className="text-lg font-bold mb-3 border-b border-light-border dark:border-dark-border pb-1">Resistido</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                             <StatCard title="Volume Total Planejado" value={folderStats.totalVolume.toLocaleString('pt-BR')} unit="Kg" />
                             <StatCard title="Carga Interna Planejada" value={folderStats.totalInternalLoadResisted.toLocaleString('pt-BR')} unit="UA" />
                         </div>
                          <div>
-                            <h5 className="text-md font-semibold text-light-text dark:text-dark-text mb-1">Séries Planejadas por Grupo Muscular</h5>
+                            <h5 className="text-md font-semibold text-light-text dark:text-dark-text mb-1">Séries Planejadas por Grupo Muscular (Intensidade por 1RM)</h5>
+                            <p className="text-xs text-light-text-secondary dark:text-dark-text-secondary mb-3">Apenas séries com esforço ≥ 7.</p>
                             <HorizontalBarChart data={folderStats.seriesByMuscleResisted} unit="séries" />
                         </div>
                     </section>
-                    <hr className="border-light-border dark:border-dark-border" />
+
                     {/* Cardio */}
                     <section>
-                        <h4 className="text-lg font-bold mb-3">Cardiovascular</h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                        <h4 className="text-lg font-bold mb-3 border-b border-light-border dark:border-dark-border pb-1">Cardiovascular</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
                             <StatCard title="Carga Externa Planejada" value={folderStats.totalExternalLoadCardio.toLocaleString('pt-BR')} unit="UA" />
                             <StatCard title="Carga Interna Planejada" value={folderStats.totalInternalLoadCardio.toLocaleString('pt-BR')} unit="UA" />
                         </div>
+
+                        {/* Intensity Distribution in Folder Modal */}
+                        <div className="space-y-4">
+                            <h5 className="text-md font-semibold text-light-text dark:text-dark-text">Distribuição de Intensidade Planejada</h5>
+                            <p className="text-xs text-light-text-secondary dark:text-dark-text-secondary mb-4">Baseada nos exercícios de cardio planejados e seus testes de referência.</p>
+                            
+                            {cardioExercisesInFolder.length > 0 ? (
+                                <div className="bg-light-bg dark:bg-dark-bg p-3 rounded-lg space-y-3 mb-6">
+                                    <div className="flex items-center text-[10px] font-bold uppercase text-light-text-secondary mb-1">
+                                        <SettingsIcon className="h-3 w-3 mr-1" /> Mapeamento de Referências (100%)
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        {cardioExercisesInFolder.map(ex => {
+                                            const availableTests = availableTestsByExercise[ex.id] || [];
+                                            return (
+                                                <div key={ex.id} className="space-y-1">
+                                                    <label className="block text-[10px] font-bold text-light-text dark:text-dark-text truncate">{ex.name}</label>
+                                                    <CustomSelect 
+                                                        options={availableTests}
+                                                        value={selectedReferences[ex.id]}
+                                                        onChange={(val) => setSelectedReferences(prev => ({ ...prev, [ex.id]: val || '' }))}
+                                                        placeholder={availableTests.length > 0 ? "Escolha o teste..." : "Nenhum teste"}
+                                                    />
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            ) : (
+                                <p className="text-xs text-light-text-secondary italic">Nenhum exercício cardiovascular planejado nesta pasta.</p>
+                            )}
+
+                            {folderStats.cardioIntensityDistribution.length > 0 ? (
+                                <div className="mt-4">
+                                    <HorizontalBarChart data={folderStats.cardioIntensityDistribution} unit="min" />
+                                    <div className="mt-6 flex gap-3 text-[9px] text-light-text-secondary justify-center flex-wrap">
+                                        <div className="flex items-center"><span className="h-2 w-2 rounded-full mr-1" style={{backgroundColor: '#7F1D1D'}}></span> Supramáximo (&gt;100%)</div>
+                                        <div className="flex items-center"><span className="h-2 w-2 rounded-full mr-1" style={{backgroundColor: '#EF4444'}}></span> Máximo (100%)</div>
+                                        <div className="flex items-center"><span className="h-2 w-2 rounded-full mr-1" style={{backgroundColor: '#F97316'}}></span> Severo (85-99%)</div>
+                                        <div className="flex items-center"><span className="h-2 w-2 rounded-full mr-1" style={{backgroundColor: '#F59E0B'}}></span> Pesado (63-84%)</div>
+                                        <div className="flex items-center"><span className="h-2 w-2 rounded-full mr-1" style={{backgroundColor: '#10B981'}}></span> Moderado (45-62%)</div>
+                                        <div className="flex items-center"><span className="h-2 w-2 rounded-full mr-1" style={{backgroundColor: '#3B82F6'}}></span> Leve {"(<45%)"}</div>
+                                    </div>
+                                </div>
+                            ) : cardioExercisesInFolder.length > 0 && (
+                                <p className="text-xs text-center p-4 border-2 border-dashed border-light-border dark:border-dark-border rounded-lg text-light-text-secondary">
+                                    Selecione testes de referência acima para visualizar a distribuição de zonas.
+                                </p>
+                            )}
+                        </div>
                     </section>
-                     <hr className="border-light-border dark:border-dark-border" />
+
                     {/* Flexibilidade */}
                     <section>
-                        <h4 className="text-lg font-bold mb-3">Flexibilidade</h4>
+                        <h4 className="text-lg font-bold mb-3 border-b border-light-border dark:border-dark-border pb-1">Flexibilidade</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                             <StatCard title="Carga Interna Planejada" value={folderStats.totalInternalLoadFlex.toLocaleString('pt-BR')} unit="UA" />
                         </div>

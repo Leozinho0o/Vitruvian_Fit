@@ -1,9 +1,8 @@
 
-
-import React from 'react';
+import React, { useRef } from 'react';
 import { useApp } from '../App';
 import { Theme } from '../types';
-import { SunIcon, MoonIcon, MonitorIcon, ChevronRightIcon, ClipboardListIcon, DumbbellIcon, BarChartIcon } from '../components/Icons';
+import { SunIcon, MoonIcon, MonitorIcon, ChevronRightIcon, ClipboardListIcon, DumbbellIcon, BarChartIcon, DownloadIcon, UploadIcon } from '../components/Icons';
 
 const SettingsScreen: React.FC = () => {
     const { 
@@ -12,7 +11,11 @@ const SettingsScreen: React.FC = () => {
         setIsPhysicalEvaluationScreenOpen,
         setIsMuscleGroupsScreenOpen,
         setIsPhysicalTestsScreenOpen,
+        exportData,
+        importData
     } = useApp();
+
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const themeOptions = [
         { id: Theme.LIGHT, name: 'Claro', icon: <SunIcon className="h-5 w-5 mr-2" /> },
@@ -20,8 +23,20 @@ const SettingsScreen: React.FC = () => {
         { id: Theme.SYSTEM, name: 'Sistema', icon: <MonitorIcon className="h-5 w-5 mr-2" /> },
     ];
 
+    const handleImportClick = () => {
+        fileInputRef.current?.click();
+    };
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files[0]) {
+            importData(e.target.files[0]);
+            // Reset input so the same file can be selected again
+            e.target.value = '';
+        }
+    };
+
     return (
-        <div className="p-4 space-y-8">
+        <div className="p-4 space-y-8 pb-10">
             {/* Theme Selection */}
             <section>
                 <h2 className="text-xl font-bold mb-3 text-light-text dark:text-dark-text">Tema</h2>
@@ -45,39 +60,71 @@ const SettingsScreen: React.FC = () => {
 
             {/* General Settings Buttons */}
             <section className="space-y-4">
+                <h2 className="text-xl font-bold text-light-text dark:text-dark-text">Ferramentas</h2>
                  <button
                     onClick={() => setIsPhysicalEvaluationScreenOpen(true)}
-                    className="w-full flex justify-between items-center cursor-pointer p-3 bg-light-card dark:bg-dark-card rounded-lg shadow-sm hover:bg-light-bg dark:hover:bg-dark-border"
+                    className="w-full flex justify-between items-center cursor-pointer p-4 bg-light-card dark:bg-dark-card rounded-lg shadow-sm hover:bg-light-bg dark:hover:bg-dark-border"
                     aria-label="Abrir tela de avaliação física"
                 >
                     <div className="flex items-center">
                         <ClipboardListIcon className="h-6 w-6 mr-4 text-primary"/>
-                        <h2 className="text-xl font-bold text-light-text dark:text-dark-text">Avaliação Física</h2>
+                        <h2 className="text-lg font-bold text-light-text dark:text-dark-text">Avaliação Física</h2>
                     </div>
                     <ChevronRightIcon className="h-6 w-6 text-light-text-secondary dark:text-dark-text-secondary"/>
                 </button>
                  <button
                     onClick={() => setIsPhysicalTestsScreenOpen(true)}
-                    className="w-full flex justify-between items-center cursor-pointer p-3 bg-light-card dark:bg-dark-card rounded-lg shadow-sm hover:bg-light-bg dark:hover:bg-dark-border"
+                    className="w-full flex justify-between items-center cursor-pointer p-4 bg-light-card dark:bg-dark-card rounded-lg shadow-sm hover:bg-light-bg dark:hover:bg-dark-border"
                     aria-label="Abrir tela de testes físicos"
                 >
                     <div className="flex items-center">
                         <BarChartIcon className="h-6 w-6 mr-4 text-primary"/>
-                        <h2 className="text-xl font-bold text-light-text dark:text-dark-text">Testes Físicos</h2>
+                        <h2 className="text-lg font-bold text-light-text dark:text-dark-text">Testes Físicos</h2>
                     </div>
                     <ChevronRightIcon className="h-6 w-6 text-light-text-secondary dark:text-dark-text-secondary"/>
                 </button>
                  <button
                     onClick={() => setIsMuscleGroupsScreenOpen(true)}
-                    className="w-full flex justify-between items-center cursor-pointer p-3 bg-light-card dark:bg-dark-card rounded-lg shadow-sm hover:bg-light-bg dark:hover:bg-dark-border"
+                    className="w-full flex justify-between items-center cursor-pointer p-4 bg-light-card dark:bg-dark-card rounded-lg shadow-sm hover:bg-light-bg dark:hover:bg-dark-border"
                     aria-label="Gerenciar grupos musculares"
                 >
                     <div className="flex items-center">
                         <DumbbellIcon className="h-6 w-6 mr-4 text-primary"/>
-                        <h2 className="text-xl font-bold text-light-text dark:text-dark-text">Grupos Musculares</h2>
+                        <h2 className="text-lg font-bold text-light-text dark:text-dark-text">Grupos Musculares</h2>
                     </div>
                     <ChevronRightIcon className="h-6 w-6 text-light-text-secondary dark:text-dark-text-secondary"/>
                 </button>
+            </section>
+
+            {/* Backup Section */}
+            <section className="space-y-4">
+                <h2 className="text-xl font-bold text-light-text dark:text-dark-text">Dados e Backup</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <button
+                        onClick={exportData}
+                        className="flex items-center justify-center p-4 bg-primary hover:bg-primary-dark text-white rounded-lg shadow-sm font-bold transition-colors"
+                    >
+                        <DownloadIcon className="h-5 w-5 mr-3" />
+                        Exportar Backup
+                    </button>
+                    <button
+                        onClick={handleImportClick}
+                        className="flex items-center justify-center p-4 bg-secondary hover:bg-pink-700 text-white rounded-lg shadow-sm font-bold transition-colors"
+                    >
+                        <UploadIcon className="h-5 w-5 mr-3" />
+                        Importar Backup
+                    </button>
+                    <input 
+                        type="file" 
+                        ref={fileInputRef} 
+                        onChange={handleFileChange} 
+                        accept=".json" 
+                        className="hidden" 
+                    />
+                </div>
+                <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary italic">
+                    O backup exporta todos os seus exercícios, rotinas, histórico de treinos e avaliações em um arquivo .json. Você pode guardar este arquivo para restaurar seus dados em outro dispositivo.
+                </p>
             </section>
         </div>
     );

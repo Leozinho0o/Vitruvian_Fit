@@ -1,9 +1,11 @@
-import React, { useMemo, useState } from 'react';
+
+import React, { useMemo, useState, useEffect } from 'react';
 import { useApp } from '../App';
-import { WorkoutSession, Routine, ExerciseCategory, Unit, MeasurementType, Evaluation } from '../types';
-import { ChevronRightIcon, FileTextIcon } from '../components/Icons';
+import { WorkoutSession, Routine, ExerciseCategory, Unit, MeasurementType, Evaluation, Exercise } from '../types';
+import { ChevronRightIcon, FileTextIcon, BarChartIcon, SettingsIcon } from '../components/Icons';
 import { BarChart, HorizontalBarChart, ChartData } from '../components/Charts';
-import { parseEffortToNumber } from '../utils';
+import { parseEffortToNumber, formatSecondsToMMSS } from '../utils';
+import CustomSelect from '../components/CustomSelect';
 
 
 // Helper function to format a Date object to a 'YYYY-MM-DD' string for date inputs
@@ -19,6 +21,9 @@ const StatsScreen: React.FC = () => {
     const [isCardioExpanded, setIsCardioExpanded] = useState(false);
     const [isFlexibilidadeExpanded, setIsFlexibilidadeExpanded] = useState(false);
     const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+
+    // Map of exerciseId -> selected testId for reference
+    const [selectedReferences, setSelectedReferences] = useState<Record<string, string>>({});
 
     // Default to last 5 days
     const [endDate, setEndDate] = useState(formatDateForInput(new Date()));
@@ -114,6 +119,117 @@ const StatsScreen: React.FC = () => {
                 return workoutDate >= start && workoutDate <= end;
             });
     }, [workouts, startDate, endDate]);
+
+    // Identify all cardio exercises performed in the filtered period
+    const cardioExercisesInPeriod = useMemo(() => {
+        const foundIds = new Set<string>();
+        filteredWorkouts.forEach(w => {
+            w.loggedExercises.forEach(le => {
+                const ex = exercises.find(e => e.id === le.exerciseId);
+                if (ex?.category === ExerciseCategory.CARDIO) {
+                    foundIds.add(le.exerciseId);
+                }
+            });
+        });
+        return Array.from(foundIds).map(id => exercises.find(e => e.id === id)!).filter(Boolean);
+    }, [filteredWorkouts, exercises]);
+
+    // Available reference tests for each exercise
+    const availableTestsByExercise = useMemo(() => {
+        const map: Record<string, { value: string, label: string }[]> = {};
+        
+        workouts.forEach(w => {
+            if (!w.completed || w.routineId !== 'internal_test') return;
+            const logEx = w.loggedExercises[0];
+            const notes = logEx?.notes || '';
+            if (notes.includes('5 minutos') || notes.includes('Incremental')) {
+                if (!map[logEx.exerciseId]) map[logEx.exerciseId] = [];
+                const type = notes.includes('5 minutos') ? '5min' : 'Inc';
+                map[logEx.exerciseId].push({
+                    value: w.id,
+                    label: `${new Date(`${w.date}T00:00:00`).toLocaleDateString('pt-BR')} - ${type}`
+                });
+            }
+        });
+
+        // Sort each exercise tests by date descending
+        Object.keys(map).forEach(id => {
+            map[id].sort((a, b) => b.value.localeCompare(a.value));
+        });
+
+        return map;
+    }, [workouts]);
+
+    // Cardiovascular intensity distribution calculation
+    const cardioIntensityDistributionData = useMemo<ChartData[]>(() => {
+        // Zonas
+        const zones = {
+            'Supramáximo (>100%)': { time: 0, color: '#7F1D1D' },
+            'Máximo (100%)': { time: 0, color: '#EF4444' },
+            'Severo (85-99%)': { time: 0, color: '#F97316' },
+            'Pesado (63-84%)': { time: 0, color: '#F59E0B' },
+            'Moderado (45-62%)': { time: 0, color: '#10B981' },
+            'Leve (<45%)': { time: 0, color: '#3B82F6' },
+        };
+
+        // Cache para referências de intensidade (100%) para evitar recálculo
+        const exerciseRefIntensity: Record<string, number> = {};
+
+        // Pré-calcular intensidade de referência para cada exercício mapeado
+        Object.entries(selectedReferences).forEach(([exId, testId]) => {
+            const testWorkout = workouts.find(w => w.id === testId);
+            if (!testWorkout) return;
+            
+            const testSets = testWorkout.loggedExercises[0].sets;
+            const testNotes = testWorkout.loggedExercises[0].notes || '';
+            
+            let referenceIntensity = 0;
+            if (testNotes.includes('5 minutos')) {
+                referenceIntensity = testSets[0].value ?? 0;
+            } else {
+                const completed = testSets.filter(s => s.completed);
+                referenceIntensity = completed.length > 0 ? (completed[completed.length - 1].value ?? 0) : (testSets[0].value ?? 0);
+            }
+
+            if (referenceIntensity > 0) {
+                exerciseRefIntensity[exId] = referenceIntensity;
+            }
+        });
+
+        filteredWorkouts.forEach(session => {
+            session.loggedExercises.forEach(loggedEx => {
+                const refIntensity = exerciseRefIntensity[loggedEx.exerciseId];
+                if (!refIntensity) return;
+
+                loggedEx.sets.forEach(set => {
+                    const intensity = set.value ?? 0;
+                    const durationSeconds = set.time ?? 0;
+                    if (intensity <= 0 || durationSeconds <= 0) return;
+
+                    const percentage = (intensity / refIntensity) * 100;
+                    let zoneKey: keyof typeof zones;
+
+                    if (percentage > 100) zoneKey = 'Supramáximo (>100%)';
+                    else if (percentage >= 100) zoneKey = 'Máximo (100%)';
+                    else if (percentage >= 85) zoneKey = 'Severo (85-99%)';
+                    else if (percentage >= 63) zoneKey = 'Pesado (63-84%)';
+                    else if (percentage >= 45) zoneKey = 'Moderado (45-62%)';
+                    else zoneKey = 'Leve (<45%)';
+
+                    zones[zoneKey].time += durationSeconds;
+                });
+            });
+        });
+
+        const chartItems = Object.entries(zones).map(([label, data]) => ({
+            label,
+            value: Math.round(data.time / 60), // Converter para minutos
+            details: [{ name: 'Duração', value: Math.round(data.time / 60), color: data.color }]
+        }));
+
+        // Retornar apenas se houver algum tempo registrado
+        return chartItems.some(i => i.value > 0) ? chartItems : [];
+    }, [selectedReferences, filteredWorkouts, workouts]);
 
     const dailyDurationData = useMemo<ChartData[]>(() => {
         if (!startDate || !endDate) return [];
@@ -289,37 +405,110 @@ const StatsScreen: React.FC = () => {
         }));
     }, [filteredWorkouts, routines, exercises, startDate, endDate, evaluations]);
     
+    // --- Lógica de classificação de intensidade por 1RM ---
     const seriesByMuscleGroupData = useMemo<ChartData[]>(() => {
-        const dataByMuscle = new Map<string, number>();
+        const latestBodyMass = (evaluations && evaluations.length > 0) ? evaluations[0].measurements.bodyMass : undefined;
+
+        // 1. Calcular o maior 1RM estimado HISTÓRICO para cada exercício do app
+        const max1RMMap = new Map<string, number>();
+        workouts.filter(w => w.completed).forEach(session => {
+            session.loggedExercises.forEach(loggedEx => {
+                const exercise = exercises.find(e => e.id === loggedEx.exerciseId);
+                if (!exercise || exercise.category !== ExerciseCategory.RESISTED || exercise.unit !== Unit.KG) return;
+
+                loggedEx.sets.forEach(set => {
+                    const effortValue = parseEffortToNumber(set.effort);
+                    // Usar apenas séries de alto esforço (>= 9) para estimar o 1RM real do indivíduo
+                    if (effortValue < 9) return;
+
+                    const reps = set.reps ?? 0;
+                    const barbellWeight = loggedEx.barbellWeight ?? 0;
+                    let load = (set.value ?? 0) + barbellWeight;
+                    
+                    if (exercise.isWeightDoubled) load *= 2;
+                    else if (exercise.isCounterweight && latestBodyMass && load > 0) load = Math.max(0, latestBodyMass - load);
+                    
+                    if (reps > 0 && load > 0) {
+                        const estimated1RM = load * (1 + reps / 30);
+                        const currentMax = max1RMMap.get(exercise.id) || 0;
+                        if (estimated1RM > currentMax) max1RMMap.set(exercise.id, estimated1RM);
+                    }
+                });
+            });
+        });
+
+        // 2. Processar os treinos do PERÍODO FILTRADO
+        // Estrutura: muscle -> { category -> count }
+        const intensityMap = new Map<string, Record<string, number>>();
         muscleGroups.forEach(muscle => {
-            dataByMuscle.set(muscle, 0);
+            intensityMap.set(muscle, { 'Alta': 0, 'Moderada': 0, 'Leve': 0, 'Muito Leve': 0 });
         });
 
         filteredWorkouts.forEach((w: WorkoutSession) => {
             w.loggedExercises.forEach(loggedEx => {
                 const exercise = exercises.find(e => e.id === loggedEx.exerciseId);
-                if (exercise && exercise.category === ExerciseCategory.RESISTED) {
-                    const numSets = loggedEx.sets.filter(set => parseEffortToNumber(set.effort) >= 7).length;
-                    if (numSets > 0) {
-                        const uniqueMuscles = new Set([...exercise.primaryMuscles, ...exercise.secondaryMuscles]);
-                        uniqueMuscles.forEach(muscle => {
-                            if (dataByMuscle.has(muscle)) {
-                                dataByMuscle.set(muscle, dataByMuscle.get(muscle)! + numSets);
-                            }
-                        });
+                if (!exercise || exercise.category !== ExerciseCategory.RESISTED) return;
+
+                const max1RM = max1RMMap.get(exercise.id);
+                const uniqueMuscles = new Set([...exercise.primaryMuscles, ...exercise.secondaryMuscles]);
+
+                loggedEx.sets.forEach(set => {
+                    const effortValue = parseEffortToNumber(set.effort);
+                    // Apenas séries efetivas (>= 7)
+                    if (effortValue < 7) return;
+
+                    let intensityCategory = 'Moderada'; // Default caso não haja 1RM estimado (considera moderado por ser esforço >= 7)
+
+                    if (max1RM && max1RM > 0) {
+                        const barbellWeight = loggedEx.barbellWeight ?? 0;
+                        let currentLoad = (set.value ?? 0) + barbellWeight;
+                        if (exercise.isWeightDoubled) currentLoad *= 2;
+                        else if (exercise.isCounterweight && latestBodyMass && currentLoad > 0) currentLoad = Math.max(0, latestBodyMass - currentLoad);
+
+                        const percentage = (currentLoad / max1RM) * 100;
+                        if (percentage >= 85) intensityCategory = 'Alta';
+                        else if (percentage >= 60) intensityCategory = 'Moderada';
+                        else if (percentage >= 30) intensityCategory = 'Leve';
+                        else intensityCategory = 'Muito Leve';
                     }
-                }
+
+                    uniqueMuscles.forEach(muscle => {
+                        if (intensityMap.has(muscle)) {
+                            const counts = intensityMap.get(muscle)!;
+                            counts[intensityCategory]++;
+                        }
+                    });
+                });
             });
         });
 
-        const chartData = Array.from(dataByMuscle.entries())
-            .map(([muscle, count]) => ({
-                label: muscle,
-                value: count,
-            }));
+        // 3. Converter para o formato ChartData[] com detalhes empilhados
+        const intensityColors: Record<string, string> = {
+            'Alta': '#EF4444',       // Red
+            'Moderada': '#DB2777',   // Pink/Secondary
+            'Leve': '#F59E0B',       // Amber
+            'Muito Leve': '#3B82F6'  // Blue
+        };
 
-        return chartData;
-    }, [filteredWorkouts, exercises, muscleGroups]);
+        return Array.from(intensityMap.entries())
+            .map(([muscle, counts]) => {
+                const total = Object.values(counts).reduce((a, b) => a + b, 0);
+                const details = Object.entries(counts)
+                    .filter(([, val]) => val > 0)
+                    .map(([name, value]) => ({
+                        name,
+                        value,
+                        color: intensityColors[name]
+                    }));
+
+                return {
+                    label: muscle,
+                    value: total,
+                    details
+                };
+            })
+            .filter(item => item.value > 0);
+    }, [filteredWorkouts, workouts, exercises, muscleGroups, evaluations]);
     
     const dailyCardioLoadData = useMemo<ChartData[]>(() => {
         if (!startDate || !endDate) return [];
@@ -624,8 +813,8 @@ const StatsScreen: React.FC = () => {
                                     <BarChart data={dailyInternalLoadData} isStacked={true} unit="UA" />
                                 </div>
                                 <div>
-                                    <h3 className="text-lg font-semibold text-light-text dark:text-dark-text mb-1">Séries por Grupo Muscular</h3>
-                                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Soma do número de séries com esforço &ge; 7 de todos os exercícios resistidos que trabalham cada grupo muscular.</p>
+                                    <h3 className="text-lg font-semibold text-light-text dark:text-dark-text mb-1">Séries por Grupo Muscular (Intensidade por 1RM)</h3>
+                                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Soma das séries efetivas (esforço &ge; 7) classificadas pela porcentagem da carga em relação ao seu 1RM histórico estimado.</p>
                                     <HorizontalBarChart data={seriesByMuscleGroupData} unit="séries" />
                                 </div>
                             </div>
@@ -646,16 +835,72 @@ const StatsScreen: React.FC = () => {
                     
                     {isCardioExpanded && (
                         <div id="cardio-stats-content" className="mt-4">
-                            <div className="pl-8 pt-4 space-y-12">
-                                <div>
+                            <div className="pt-4 space-y-12">
+                                <div className="pl-8">
                                     <h3 className="text-lg font-semibold text-light-text dark:text-dark-text mb-1">Carga Externa</h3>
                                     <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Cálculo: Soma de (tempo em min x (velocidade ou distância)) para todas as séries.</p>
                                     <BarChart data={dailyCardioLoadData} isStacked={true} unit="UA" />
                                 </div>
-                                <div>
+                                <div className="pl-8">
                                     <h3 className="text-lg font-semibold text-light-text dark:text-dark-text mb-1">Carga Interna (UA)</h3>
                                     <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Cálculo: Soma de (tempo em min x (velocidade ou distância) x PSE) para todas as séries.</p>
                                     <BarChart data={dailyCardioInternalLoadData} isStacked={true} unit="UA" />
+                                </div>
+
+                                {/* Cardiovascular Intensity Distribution Section */}
+                                <div className="border-t border-light-border dark:border-dark-border pt-8">
+                                    <div className="mb-6">
+                                        <h3 className="text-lg font-semibold text-light-text dark:text-dark-text">Distribuição de Intensidade (Zonas)</h3>
+                                        <p className="text-xs text-light-text-secondary dark:text-dark-text-secondary">Tempo agregado em cada zona metabólica. Selecione um teste de referência para cada exercício.</p>
+                                    </div>
+
+                                    {/* Reference Mapping UI */}
+                                    {cardioExercisesInPeriod.length > 0 ? (
+                                        <div className="bg-light-bg dark:bg-dark-bg p-4 rounded-lg mb-8 space-y-4">
+                                            <div className="flex items-center text-xs font-bold uppercase text-light-text-secondary mb-2">
+                                                <SettingsIcon className="h-4 w-4 mr-2" /> Mapeamento de Referências (100%)
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                {cardioExercisesInPeriod.map(ex => {
+                                                    const availableTests = availableTestsByExercise[ex.id] || [];
+                                                    return (
+                                                        <div key={ex.id} className="space-y-1">
+                                                            <label className="block text-[11px] font-semibold text-light-text dark:text-dark-text truncate">{ex.name}</label>
+                                                            <CustomSelect 
+                                                                options={availableTests}
+                                                                value={selectedReferences[ex.id]}
+                                                                onChange={(val) => setSelectedReferences(prev => ({ ...prev, [ex.id]: val || '' }))}
+                                                                placeholder={availableTests.length > 0 ? "Escolha o teste base..." : "Nenhum teste encontrado"}
+                                                            />
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <p className="text-sm text-light-text-secondary italic text-center mb-6">Nenhum exercício cardiovascular registrado no período para exibir o gráfico de zonas.</p>
+                                    )}
+                                    
+                                    {cardioIntensityDistributionData.length > 0 ? (
+                                        <div className="mt-6">
+                                            <HorizontalBarChart data={cardioIntensityDistributionData} unit="min" />
+                                            <div className="mt-6 flex gap-4 text-[10px] text-light-text-secondary justify-center flex-wrap">
+                                                <div className="flex items-center"><span className="h-2 w-2 rounded-full mr-1" style={{backgroundColor: '#7F1D1D'}}></span> Supramáximo (&gt;100%)</div>
+                                                <div className="flex items-center"><span className="h-2 w-2 rounded-full mr-1" style={{backgroundColor: '#EF4444'}}></span> Máximo (100%)</div>
+                                                <div className="flex items-center"><span className="h-2 w-2 rounded-full mr-1" style={{backgroundColor: '#F97316'}}></span> Severo (85-99%)</div>
+                                                <div className="flex items-center"><span className="h-2 w-2 rounded-full mr-1" style={{backgroundColor: '#F59E0B'}}></span> Pesado (63-84%)</div>
+                                                <div className="flex items-center"><span className="h-2 w-2 rounded-full mr-1" style={{backgroundColor: '#10B981'}}></span> Moderado (45-62%)</div>
+                                                <div className="flex items-center"><span className="h-2 w-2 rounded-full mr-1" style={{backgroundColor: '#3B82F6'}}></span> Leve {"(<45%)"}</div>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        cardioExercisesInPeriod.length > 0 && (
+                                            <div className="text-center p-8 border-2 border-dashed border-light-border dark:border-dark-border rounded-lg">
+                                                <BarChartIcon className="h-8 w-8 mx-auto text-light-text-secondary opacity-30 mb-2" />
+                                                <p className="text-sm text-light-text-secondary">Selecione ao menos um teste de referência acima para os exercícios realizados para visualizar a distribuição.</p>
+                                            </div>
+                                        )
+                                    )}
                                 </div>
                             </div>
                         </div>

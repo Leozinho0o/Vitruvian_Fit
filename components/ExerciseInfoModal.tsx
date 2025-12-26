@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState, useEffect } from 'react';
 import { useApp } from '../App';
 import { Exercise, Unit, MeasurementType, PerceivedExertionScale, ExerciseCategory } from '../types';
@@ -9,6 +10,17 @@ import { ChartData } from './Charts';
 interface ExerciseInfoModalProps {
     exercise: Exercise;
     onClose: () => void;
+}
+
+interface BestSetDetails {
+    reps: number;
+    totalLoad: number;
+    originalWeight: number;
+    barbellWeight: number;
+    isWeightDoubled: boolean;
+    isCounterweight: boolean;
+    effort: string;
+    bodyMassAtTime?: number;
 }
 
 const repEstimationTableData = [
@@ -26,7 +38,6 @@ const ExerciseInfoModal: React.FC<ExerciseInfoModalProps> = ({ exercise, onClose
 
     const [selected1RMForTable, setSelected1RMForTable] = useState<number | null>(null);
 
-
     const youtubeId = useMemo(() => {
         if (!exercise.videoUrl) return null;
         const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
@@ -34,7 +45,6 @@ const ExerciseInfoModal: React.FC<ExerciseInfoModalProps> = ({ exercise, onClose
         return (match && match[2].length === 11) ? match[2] : null;
     }, [exercise.videoUrl]);
 
-    // This memo calculates all resistance stats, including the full history for the chart and the overall best stats.
     const resistanceStats = useMemo(() => {
         const completedWorkouts = workouts.filter(w => w.completed && w.date);
         const latestBodyMass = (evaluations && evaluations.length > 0) ? evaluations[0].measurements.bodyMass : undefined;
@@ -50,10 +60,9 @@ const ExerciseInfoModal: React.FC<ExerciseInfoModalProps> = ({ exercise, onClose
         };
     
         let highest1RM = 0;
-        let setForHighest1RM: { reps: number; weight: number } | null = null;
+        let setDetails: BestSetDetails | null = null;
         const dailyMax1RMs = new Map<string, { max1RM: number; routineId: string }>();
 
-        // Calculate daily max 1RM across all workouts with high effort
         for (const session of completedWorkouts) {
             let sessionMax1RM = 0;
             for (const loggedEx of session.loggedExercises) {
@@ -63,16 +72,26 @@ const ExerciseInfoModal: React.FC<ExerciseInfoModalProps> = ({ exercise, onClose
                         if (effortValue < 9) continue;
 
                         const reps = set.reps ?? 0;
-                        const setWeight = set.value ?? 0;
+                        const originalWeight = set.value ?? 0;
                         const barbellWeight = loggedEx.barbellWeight ?? 0;
-                        let totalLoad = setWeight + barbellWeight;
+                        let totalLoad = originalWeight + barbellWeight;
+                        
                         if (exercise.isWeightDoubled) totalLoad *= 2;
                         else if (exercise.isCounterweight && latestBodyMass && totalLoad > 0) totalLoad = Math.max(0, latestBodyMass - totalLoad);
                         
                         const current1RM = calculate1RM(reps, totalLoad);
                         if (current1RM > highest1RM) {
                             highest1RM = current1RM;
-                            setForHighest1RM = { reps, weight: totalLoad };
+                            setDetails = {
+                                reps,
+                                totalLoad,
+                                originalWeight,
+                                barbellWeight,
+                                isWeightDoubled: !!exercise.isWeightDoubled,
+                                isCounterweight: !!exercise.isCounterweight,
+                                effort: set.effort || '',
+                                bodyMassAtTime: latestBodyMass
+                            };
                         }
                         if (current1RM > sessionMax1RM) sessionMax1RM = current1RM;
                     }
@@ -87,7 +106,6 @@ const ExerciseInfoModal: React.FC<ExerciseInfoModalProps> = ({ exercise, onClose
             }
         }
     
-        // Calculate overall stats for max weight (non-1RM case, no effort filter)
         let maxWeight = 0;
         let repsAtMaxWeight = 0;
         for (const session of completedWorkouts) {
@@ -113,8 +131,8 @@ const ExerciseInfoModal: React.FC<ExerciseInfoModalProps> = ({ exercise, onClose
         }
 
         let overallStats;
-        if (highest1RM > 0 && setForHighest1RM) {
-            overallStats = { type: 'resisted_1rm' as const, data: { estimated1RM: Math.round(highest1RM), set: setForHighest1RM } };
+        if (highest1RM > 0 && setDetails) {
+            overallStats = { type: 'resisted_1rm' as const, data: { estimated1RM: Math.round(highest1RM), details: setDetails } };
         } else if (maxWeight > 0) {
             overallStats = { type: 'resisted' as const, data: { maxWeight, repsAtMaxWeight } };
         } else {
@@ -137,7 +155,6 @@ const ExerciseInfoModal: React.FC<ExerciseInfoModalProps> = ({ exercise, onClose
         return { fullHistory, overallStats };
     }, [exercise, workouts, routines, evaluations]);
 
-    // This effect sets the initial 1RM for the table
     useEffect(() => {
         if (resistanceStats.overallStats.type === 'resisted_1rm' && resistanceStats.overallStats.data) {
             setSelected1RMForTable(resistanceStats.overallStats.data.estimated1RM);
@@ -233,17 +250,59 @@ const ExerciseInfoModal: React.FC<ExerciseInfoModalProps> = ({ exercise, onClose
                     <div className="space-y-4">
                         {stats?.type === 'resisted_1rm' && stats.data ? (
                             <>
-                                <div className="text-center bg-light-bg dark:bg-dark-bg p-4 rounded-lg">
-                                    <p className="text-sm font-semibold text-light-text dark:text-dark-text">Maior Estimativa de 1 Repetição Máxima (1RM) já registrada</p>
-                                    <p className="text-4xl font-bold text-primary">{stats.data.estimated1RM}<span className="text-2xl font-medium"> kg</span></p>
+                                <div className="text-center bg-light-bg dark:bg-dark-bg p-4 rounded-lg border-2 border-primary/20">
+                                    <p className="text-xs font-bold uppercase tracking-wider text-primary mb-1">Carga Máxima Estimada (1RM)</p>
+                                    <p className="text-5xl font-black text-primary">{stats.data.estimated1RM}<span className="text-2xl font-medium"> kg</span></p>
                                 </div>
-                                <div className="text-center text-xs text-light-text-secondary dark:text-dark-text-secondary -mt-2 mb-2 px-4">
-                                    *Cálculo baseado em séries com esforço (PSE/RIR) igual ou superior a 9.
+                                
+                                <div className="bg-light-bg dark:bg-dark-bg p-4 rounded-lg space-y-3">
+                                    <h4 className="text-sm font-bold text-light-text-secondary dark:text-dark-text-secondary uppercase tracking-tight border-b border-light-border dark:border-dark-border pb-1">Detalhamento do Registro</h4>
+                                    
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-sm text-light-text-secondary">Peso inserido:</span>
+                                        <span className="font-bold text-lg">{stats.data.details.originalWeight} kg</span>
+                                    </div>
+                                    
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-sm text-light-text-secondary">Repetições:</span>
+                                        <span className="font-bold text-lg">{stats.data.details.reps} reps</span>
+                                    </div>
+
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-sm text-light-text-secondary">Esforço (PSE/RIR):</span>
+                                        <span className="font-bold text-secondary">{stats.data.details.effort || 'Não inf.'}</span>
+                                    </div>
+
+                                    {/* Modificadores */}
+                                    <div className="pt-2 flex flex-wrap gap-2">
+                                        {stats.data.details.barbellWeight > 0 && (
+                                            <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-[10px] font-bold rounded uppercase">
+                                                Barra: +{stats.data.details.barbellWeight}kg
+                                            </span>
+                                        )}
+                                        {stats.data.details.isWeightDoubled && (
+                                            <span className="px-2 py-1 bg-pink-100 dark:bg-pink-900/40 text-pink-700 dark:text-pink-300 text-[10px] font-bold rounded uppercase">
+                                                Peso 2x
+                                            </span>
+                                        )}
+                                        {stats.data.details.isCounterweight && (
+                                            <span className="px-2 py-1 bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 text-[10px] font-bold rounded uppercase">
+                                                Contrapeso (Massa: {stats.data.details.bodyMassAtTime}kg)
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    <div className="pt-2 border-t border-light-border dark:border-dark-border flex justify-between items-center">
+                                        <span className="text-xs font-semibold text-light-text-secondary uppercase">Carga Total Calculada:</span>
+                                        <span className="font-black text-primary">{stats.data.details.totalLoad} kg</span>
+                                    </div>
                                 </div>
-                                <div className="text-center bg-light-bg dark:bg-dark-bg p-4 rounded-lg">
-                                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary">Baseado no registro de</p>
-                                    <p className="text-2xl font-bold text-secondary">{stats.data.set.weight}kg <span className="font-normal">para</span> {stats.data.set.reps} reps</p>
+
+                                <div className="text-center text-[10px] text-light-text-secondary dark:text-dark-text-secondary italic px-4 leading-tight">
+                                    *Cálculo O’Conner et al.: Carga x (1 + Reps/30). <br/>
+                                    Considera apenas séries com esforço ≥ 9 para maior precisão.
                                 </div>
+
                                 <div className="mt-6 border-t border-light-border dark:border-dark-border pt-4">
                                     <h4 className="text-md font-semibold text-light-text dark:text-dark-text mb-3 text-center">Estimativa de Repetições vs. Carga</h4>
                                     

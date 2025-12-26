@@ -1,10 +1,10 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../App';
-import { Exercise, Unit, ExerciseCategory } from '../types';
-import { XIcon, ChevronDownIcon, SearchIcon, DumbbellIcon } from '../components/Icons';
+import { Exercise, Unit, ExerciseCategory, WorkoutSession } from '../types';
+import { XIcon, ChevronDownIcon, SearchIcon, DumbbellIcon, HeartPulseIcon, CalendarIcon } from '../components/Icons';
 import { BarChart, ChartData } from '../components/Charts';
-import { parseEffortToNumber } from '../utils';
+import { parseEffortToNumber, formatSecondsToMMSS } from '../utils';
 
 // Helper to format a date to 'YYYY-MM-DD'
 const formatDateForInput = (date: Date): string => {
@@ -37,8 +37,8 @@ const AccordionSection: React.FC<AccordionSectionProps> = ({ title, children, is
                 className="w-full flex justify-between items-center p-4"
                 aria-expanded={isOpen}
             >
-                <h3 className="text-xl font-bold text-light-text dark:text-dark-text">{title}</h3>
-                <ChevronDownIcon className={`h-6 w-6 text-light-text-secondary dark:text-dark-text-secondary transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+                <h3 className="text-xl font-bold text-light-text dark:text-dark-text text-left">{title}</h3>
+                <ChevronDownIcon className={`h-6 w-6 text-light-text-secondary dark:text-dark-text-secondary flex-shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
             </button>
             {isOpen && (
                 <div className="p-4 border-t border-light-border dark:border-dark-border">
@@ -54,20 +54,24 @@ interface ExercisePickerModalProps {
     onClose: () => void;
     onSelect: (exercise: Exercise) => void;
     allExercises: Exercise[];
+    categoryFilter?: ExerciseCategory;
 }
 
-const ExercisePickerModal: React.FC<ExercisePickerModalProps> = ({ onClose, onSelect, allExercises }) => {
+const ExercisePickerModal: React.FC<ExercisePickerModalProps> = ({ onClose, onSelect, allExercises, categoryFilter = ExerciseCategory.RESISTED }) => {
     const [searchQuery, setSearchQuery] = useState('');
-
-    const resistanceExercises = useMemo(() => 
-        allExercises.filter(ex => ex.category === ExerciseCategory.RESISTED && ex.unit === Unit.KG)
-    , [allExercises]);
 
     const filteredExercises = useMemo(() => {
         const query = searchQuery.toLowerCase().trim();
-        if (!query) return resistanceExercises;
-        return resistanceExercises.filter(ex => ex.name.toLowerCase().includes(query));
-    }, [resistanceExercises, searchQuery]);
+        let list = allExercises.filter(ex => ex.category === categoryFilter);
+        
+        // Additional filter for resisted 1RM tests
+        if (categoryFilter === ExerciseCategory.RESISTED) {
+            list = list.filter(ex => ex.unit === Unit.KG);
+        }
+
+        if (!query) return list;
+        return list.filter(ex => ex.name.toLowerCase().includes(query));
+    }, [allExercises, searchQuery, categoryFilter]);
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
@@ -100,14 +104,16 @@ const ExercisePickerModal: React.FC<ExercisePickerModalProps> = ({ onClose, onSe
                                 {ex.imageUrl ? (
                                     <img src={ex.imageUrl} alt={ex.name} className="w-full h-full object-cover rounded-md" loading="lazy" />
                                 ) : (
-                                    <DumbbellIcon className="h-6 w-6 text-light-text-secondary" />
+                                    categoryFilter === ExerciseCategory.RESISTED ? 
+                                        <DumbbellIcon className="h-6 w-6 text-light-text-secondary" /> : 
+                                        <HeartPulseIcon className="h-6 w-6 text-light-text-secondary" />
                                 )}
                             </div>
                             <span className="flex-grow">{ex.name}</span>
                         </button>
                     )) : (
                         <div className="text-center py-10 text-light-text-secondary dark:text-dark-text-secondary">
-                            Nenhum exercício resistido com unidade KG encontrado.
+                            Nenhum exercício encontrado.
                         </div>
                     )}
                 </div>
@@ -124,13 +130,17 @@ const PhysicalTestsScreen: React.FC = () => {
         workouts,
         routines,
         evaluations,
+        startFiveMinTest,
+        startIncrementalTest
     } = useApp();
 
     const [is1rmMultiRepOpen, setIs1rmMultiRepOpen] = useState(true);
-    const [is1rmTestOpen, setIs1rmTestOpen] = useState(true);
+    const [isFiveMinTestOpen, setIsFiveMinTestOpen] = useState(false);
+    const [isIncrementalTestOpen, setIsIncrementalTestOpen] = useState(false);
 
     const [selectedExercise, setSelectedExercise] = useState<Exercise | null>(null);
     const [isExercisePickerOpen, setIsExercisePickerOpen] = useState(false);
+    const [pickerTarget, setPickerTarget] = useState<'1rm' | '5min' | 'incremental'>('1rm');
     
     // Date filter state
     const [startDate, setStartDate] = useState<string>('');
@@ -142,7 +152,7 @@ const PhysicalTestsScreen: React.FC = () => {
     };
 
     const oneRmStats = useMemo(() => {
-        if (!selectedExercise) return { history: [], highest1RM: null, bestSet: null };
+        if (!selectedExercise || pickerTarget !== '1rm') return { history: [], highest1RM: null, bestSet: null };
 
         const completedWorkouts = workouts.filter((w: any) => w.completed && w.date);
         const latestBodyMass = (evaluations && evaluations.length > 0) ? evaluations[0].measurements.bodyMass : undefined;
@@ -211,10 +221,24 @@ const PhysicalTestsScreen: React.FC = () => {
 
         return { history, highest1RM, bestSet: bestSetForOverallHighest1RM };
 
-    }, [selectedExercise, workouts, routines, evaluations]);
+    }, [selectedExercise, workouts, routines, evaluations, pickerTarget]);
+
+    // Cardiovascular history detection
+    const cardioTestsHistory = useMemo(() => {
+        if (!selectedExercise || (pickerTarget !== '5min' && pickerTarget !== 'incremental')) return [];
+
+        const protocolKey = pickerTarget === '5min' ? '5 minutos' : 'Incremental';
+        
+        return workouts.filter((w: WorkoutSession) => {
+            if (!w.completed || w.routineId !== 'internal_test') return false;
+            const testExercise = w.loggedExercises[0];
+            if (testExercise?.exerciseId !== selectedExercise.id) return false;
+            return testExercise.notes?.includes(protocolKey);
+        }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    }, [workouts, selectedExercise, pickerTarget]);
 
     const { history: oneRmHistory, highest1RM, bestSet } = oneRmStats;
-
 
     // Effect to set initial date range and table 1RM
     useEffect(() => {
@@ -248,6 +272,11 @@ const PhysicalTestsScreen: React.FC = () => {
         });
     }, [startDate, endDate, oneRmHistory]);
 
+    const handleOpenPicker = (target: '1rm' | '5min' | 'incremental') => {
+        setPickerTarget(target);
+        setIsExercisePickerOpen(true);
+    };
+
     return (
         <div className="h-full w-full bg-light-bg dark:bg-dark-bg flex flex-col font-sans">
             <header className="flex-shrink-0 bg-light-card dark:bg-dark-card h-16 flex items-center justify-between px-4 safe-top-padding border-b border-light-border dark:border-dark-border">
@@ -257,22 +286,22 @@ const PhysicalTestsScreen: React.FC = () => {
                 </button>
             </header>
             <main className="flex-grow overflow-y-auto overflow-x-auto p-4 md:p-6 space-y-6">
-                <div className="inline-block min-w-full space-y-6">
-                    <AccordionSection title="Teste de 1RM baseado em repetições múltiplas" isOpen={is1rmMultiRepOpen} onToggle={() => setIs1rmMultiRepOpen(v => !v)}>
+                <div className="inline-block min-w-full space-y-4">
+                    <AccordionSection title="Teste de 1RM (Força)" isOpen={is1rmMultiRepOpen} onToggle={() => setIs1rmMultiRepOpen(v => !v)}>
                         <div className="space-y-4">
                             <div>
                                 <label className="block text-sm font-medium mb-1">Exercício</label>
                                 <button
-                                    onClick={() => setIsExercisePickerOpen(true)}
+                                    onClick={() => handleOpenPicker('1rm')}
                                     className="w-full h-10 flex items-center justify-between bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2 text-left"
                                 >
-                                    <span className={selectedExercise ? 'text-light-text dark:text-dark-text' : 'text-light-text-secondary dark:text-dark-text-secondary'}>
-                                        {selectedExercise?.name || 'Selecione um exercício...'}
+                                    <span className={selectedExercise && pickerTarget === '1rm' ? 'text-light-text dark:text-dark-text' : 'text-light-text-secondary dark:text-dark-text-secondary'}>
+                                        {(selectedExercise && pickerTarget === '1rm') ? selectedExercise.name : 'Selecione um exercício...'}
                                     </span>
                                     <SearchIcon className="h-5 w-5 text-light-text-secondary dark:text-dark-text-secondary" />
                                 </button>
                             </div>
-                            {selectedExercise && (
+                            {selectedExercise && pickerTarget === '1rm' && (
                                 <>
                                     <div className="flex flex-col sm:flex-row gap-4 justify-center items-center pt-4">
                                         <div>
@@ -368,9 +397,116 @@ const PhysicalTestsScreen: React.FC = () => {
                             )}
                         </div>
                     </AccordionSection>
-                    <AccordionSection title="Teste de 1RM" isOpen={is1rmTestOpen} onToggle={() => setIs1rmTestOpen(v => !v)}>
-                        <div className="text-center text-light-text-secondary dark:text-dark-text-secondary p-4">
-                            <p>Em desenvolvimento.</p>
+
+                    <AccordionSection title="Teste de 5 minutos (Cardio)" isOpen={isFiveMinTestOpen} onToggle={() => setIsFiveMinTestOpen(v => !v)}>
+                        <div className="space-y-4">
+                            <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary text-justify">
+                                Protocolo para estimativa do limiar anaeróbio através do desempenho em 5 minutos. Pode ser realizado em intensidade máxima constante (velocidade/potência) para medir a distância total percorrida ou tempo de sustentação.
+                            </p>
+                            <div>
+                                <label className="block text-sm font-medium mb-1">Exercício Cardiovascular</label>
+                                <button
+                                    onClick={() => handleOpenPicker('5min')}
+                                    className="w-full h-10 flex items-center justify-between bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2 text-left"
+                                >
+                                    <span className={selectedExercise && pickerTarget === '5min' ? 'text-light-text dark:text-dark-text' : 'text-light-text-secondary dark:text-dark-text-secondary'}>
+                                        {(selectedExercise && pickerTarget === '5min') ? selectedExercise.name : 'Selecione um exercício cardio...'}
+                                    </span>
+                                    <SearchIcon className="h-5 w-5 text-light-text-secondary dark:text-dark-text-secondary" />
+                                </button>
+                            </div>
+                            {selectedExercise && pickerTarget === '5min' && (
+                                <>
+                                    <button
+                                        onClick={() => startFiveMinTest(selectedExercise.id)}
+                                        className="w-full bg-secondary hover:bg-pink-700 text-white font-bold py-3 px-4 rounded-md flex items-center justify-center transition-colors shadow-lg"
+                                    >
+                                        Iniciar Teste de 5 Minutos
+                                    </button>
+
+                                    {cardioTestsHistory.length > 0 && (
+                                        <div className="mt-6">
+                                            <h4 className="text-sm font-bold text-light-text dark:text-dark-text mb-3 uppercase tracking-wider flex items-center">
+                                                <CalendarIcon className="h-4 w-4 mr-2" /> Histórico do Teste
+                                            </h4>
+                                            <div className="space-y-2">
+                                                {cardioTestsHistory.map(test => {
+                                                    const result = test.loggedExercises[0].sets[0];
+                                                    return (
+                                                        <div key={test.id} className="bg-light-bg dark:bg-dark-bg p-3 rounded-lg flex justify-between items-center border border-light-border dark:border-dark-border">
+                                                            <div>
+                                                                <p className="text-sm font-bold">{new Date(`${test.date}T00:00:00`).toLocaleDateString('pt-BR')}</p>
+                                                                <p className="text-xs text-light-text-secondary">{selectedExercise.name}</p>
+                                                            </div>
+                                                            <div className="text-right">
+                                                                <p className="font-black text-secondary">{result.value ?? '-'} <span className="text-xs font-normal">{selectedExercise.unit}</span></p>
+                                                                <p className="text-[10px] text-light-text-secondary">Duração: 05:00</p>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    </AccordionSection>
+
+                    <AccordionSection title="Teste Incremental (Cardio)" isOpen={isIncrementalTestOpen} onToggle={() => setIsIncrementalTestOpen(v => !v)}>
+                        <div className="space-y-4">
+                            <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary text-justify">
+                                Teste progressivo para determinação da capacidade aeróbia máxima e frequência cardíaca máxima. A intensidade deve aumentar a cada 1 minuto até a exaustão voluntária.
+                            </p>
+                            <div>
+                                <label className="block text-sm font-medium mb-1">Exercício Cardiovascular</label>
+                                <button
+                                    onClick={() => handleOpenPicker('incremental')}
+                                    className="w-full h-10 flex items-center justify-between bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2 text-left"
+                                >
+                                    <span className={selectedExercise && pickerTarget === 'incremental' ? 'text-light-text dark:text-dark-text' : 'text-light-text-secondary dark:text-dark-text-secondary'}>
+                                        {(selectedExercise && pickerTarget === 'incremental') ? selectedExercise.name : 'Selecione um exercício cardio...'}
+                                    </span>
+                                    <SearchIcon className="h-5 w-5 text-light-text-secondary dark:text-dark-text-secondary" />
+                                </button>
+                            </div>
+                            {selectedExercise && pickerTarget === 'incremental' && (
+                                <>
+                                    <button
+                                        onClick={() => startIncrementalTest(selectedExercise.id)}
+                                        className="w-full bg-secondary hover:bg-pink-700 text-white font-bold py-3 px-4 rounded-md flex items-center justify-center transition-colors shadow-lg"
+                                    >
+                                        Iniciar Teste Incremental
+                                    </button>
+
+                                    {cardioTestsHistory.length > 0 && (
+                                        <div className="mt-6">
+                                            <h4 className="text-sm font-bold text-light-text dark:text-dark-text mb-3 uppercase tracking-wider flex items-center">
+                                                <CalendarIcon className="h-4 w-4 mr-2" /> Histórico do Teste
+                                            </h4>
+                                            <div className="space-y-2">
+                                                {cardioTestsHistory.map(test => {
+                                                    const sets = test.loggedExercises[0].sets;
+                                                    const completedSets = sets.filter(s => s.completed);
+                                                    const lastSet = completedSets[completedSets.length - 1] || sets[0];
+                                                    return (
+                                                        <div key={test.id} className="bg-light-bg dark:bg-dark-bg p-3 rounded-lg flex justify-between items-center border border-light-border dark:border-dark-border">
+                                                            <div>
+                                                                <p className="text-sm font-bold">{new Date(`${test.date}T00:00:00`).toLocaleDateString('pt-BR')}</p>
+                                                                <p className="text-xs text-light-text-secondary">{selectedExercise.name}</p>
+                                                            </div>
+                                                            <div className="text-right">
+                                                                <p className="font-black text-secondary">{lastSet.value ?? '-'} <span className="text-xs font-normal">{selectedExercise.unit}</span></p>
+                                                                <p className="text-[10px] text-light-text-secondary">Último Estágio: {completedSets.length}</p>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
+                            )}
                         </div>
                     </AccordionSection>
                 </div>
@@ -383,6 +519,7 @@ const PhysicalTestsScreen: React.FC = () => {
                         setIsExercisePickerOpen(false);
                     }}
                     allExercises={exercises}
+                    categoryFilter={pickerTarget === '1rm' ? ExerciseCategory.RESISTED : ExerciseCategory.CARDIO}
                 />
             )}
         </div>

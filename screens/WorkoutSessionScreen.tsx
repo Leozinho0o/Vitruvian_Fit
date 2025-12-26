@@ -1,7 +1,8 @@
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp } from '../App';
 import { Exercise, WorkoutSession, LoggedExercise, WorkoutSet, MeasurementType, Unit, PerceivedExertionScale, ExerciseCategory, Evaluation, PlannedExercise } from '../types';
-import { ChevronLeftIcon, PlusIcon, TrashIcon, XIcon, CheckCircleIcon, ChevronDownIcon, DumbbellIcon, InfoIcon, GripVerticalIcon, SearchIcon } from '../components/Icons';
+import { ChevronLeftIcon, PlusIcon, TrashIcon, XIcon, CheckCircleIcon, ChevronDownIcon, DumbbellIcon, InfoIcon, GripVerticalIcon, SearchIcon, MinimizeIcon } from '../components/Icons';
 import { getScaleOptions } from '../constants';
 import ConfirmationModal from '../components/ConfirmationModal';
 import { formatSecondsToMMSS, formatDuration, parseTimeToSeconds, vibrate } from '../utils';
@@ -59,6 +60,7 @@ const WorkoutSessionScreen: React.FC = () => {
     const { 
         activeWorkoutSession, 
         setActiveWorkoutSession, 
+        setIsWorkoutMinimized,
         routines, 
         exercises, 
         workouts,
@@ -85,9 +87,12 @@ const WorkoutSessionScreen: React.FC = () => {
     const [isExercisePickerOpen, setIsExercisePickerOpen] = useState(false);
     const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
 
-    const routine = useMemo(() => 
-        routines.find(r => r.id === activeWorkoutSession?.routineId),
-    [routines, activeWorkoutSession]);
+    const routine = useMemo(() => {
+        if (activeWorkoutSession?.routineId === 'internal_test') {
+            return { name: 'Teste de Desempenho' };
+        }
+        return routines.find((r: any) => r.id === activeWorkoutSession?.routineId);
+    }, [routines, activeWorkoutSession]);
 
     const elapsedTime = useMemo(() => {
         if (!activeWorkoutSession) return 0;
@@ -419,13 +424,14 @@ const WorkoutSessionScreen: React.FC = () => {
             }))
             .filter(log => log.sets.length > 0);
 
-        const isNewWorkout = activeWorkoutSession.id.startsWith('ws_temp_');
+        const isNewWorkout = activeWorkoutSession.id.startsWith('ws_temp_') || activeWorkoutSession.id.startsWith('ws_test_');
         const workoutDuration = elapsedTime;
 
         if (cleanedLoggedExercises.length === 0) {
             if (window.confirm("Nenhum exercício foi registrado. O treino não será salvo. Deseja continuar?")) {
                 if (!isNewWorkout) deleteWorkout(activeWorkoutSession.id);
                 setActiveWorkoutSession(null);
+                setIsWorkoutMinimized(false);
             }
             return;
         }
@@ -451,11 +457,13 @@ const WorkoutSessionScreen: React.FC = () => {
             };
             updateWorkout(updatedSession);
         }
+        setIsWorkoutMinimized(false);
     };
     
     const handleCancelWorkout = () => setIsCancelConfirmOpen(true);
     const confirmAndCancelWorkout = () => {
         setActiveWorkoutSession(null);
+        setIsWorkoutMinimized(false);
         setIsCancelConfirmOpen(false);
     };
 
@@ -484,11 +492,11 @@ const WorkoutSessionScreen: React.FC = () => {
     return (
         <div className="h-full w-full bg-light-bg dark:bg-dark-bg flex flex-col font-sans">
             <header className="flex-shrink-0 bg-light-card dark:bg-dark-card h-16 flex items-center justify-between px-4 safe-top-padding">
-                 <button onClick={handleCancelWorkout} className="p-2 flex items-center justify-center" aria-label="Voltar">
-                    <ChevronLeftIcon className="h-6 w-6 text-light-text dark:text-dark-text" />
-                </button>
+                 <button onClick={() => setIsWorkoutMinimized(true)} className="p-2 flex items-center justify-center" aria-label="Minimizar treino">
+                    <MinimizeIcon className="h-6 w-6 text-light-text dark:text-dark-text" />
+                 </button>
                 <div className="text-center">
-                    <h1 className="text-sm font-semibold text-light-text-secondary dark:text-dark-text-secondary -mb-1 truncate px-2">{routine.name}</h1>
+                    <h1 className="text-sm font-semibold text-light-text-secondary dark:text-dark-text-secondary -mb-1 truncate px-2 max-w-[150px]">{routine.name}</h1>
                     <button
                         onClick={() => setIsTimerEditModalOpen(true)}
                         className="text-xl font-bold text-secondary tabular-nums p-1 rounded-md hover:bg-light-bg dark:hover:bg-dark-bg transition-colors"
@@ -508,7 +516,7 @@ const WorkoutSessionScreen: React.FC = () => {
                 className="flex-grow overflow-y-auto p-4 space-y-4"
             >
                 {routine.notes && (
-                    <div className="bg-light-card dark:bg-dark-card p-3 rounded-lg border-l-4" style={{borderColor: routine.color}}>
+                    <div className="bg-light-card dark:bg-dark-card p-3 rounded-lg border-l-4" style={{borderColor: routine.color || '#DB2777'}}>
                         <h3 className="text-md font-semibold text-light-text dark:text-dark-text mb-1">Anotações da Rotina</h3>
                         <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary italic">"{routine.notes}"</p>
                     </div>
@@ -608,7 +616,9 @@ const WorkoutSessionScreen: React.FC = () => {
                                                 <div className="flex justify-between items-center">
                                                     <div className="flex items-center gap-3 cursor-pointer" onClick={() => handleToggleSetComplete(loggedEx.tempId!, setIndex)}>
                                                          <input type="checkbox" aria-label={`Marcar série ${setIndex + 1} como completa`} checked={!!set.completed} readOnly className="h-5 w-5 rounded text-secondary bg-light-bg dark:bg-dark-bg border-light-border dark:border-dark-border focus:ring-secondary focus:ring-2 cursor-pointer" />
-                                                         <span className={`font-bold text-lg text-light-text dark:text-dark-text ${set.completed ? 'line-through' : ''}`}>Série {setIndex + 1}</span>
+                                                         <span className={`font-bold text-lg text-light-text dark:text-dark-text ${set.completed ? 'line-through' : ''}`}>
+                                                            {activeWorkoutSession.id.startsWith('ws_test_inc') ? `Estágio ${setIndex + 1}` : `Série ${setIndex + 1}`}
+                                                         </span>
                                                     </div>
                                                     <button onClick={() => handleDeleteSet(loggedEx.tempId!, setIndex)} className="p-2 flex items-center justify-center text-light-text-secondary dark:text-dark-text-secondary hover:text-red-500" aria-label={`Deletar série ${setIndex + 1}`}>
                                                         <TrashIcon className="h-5 w-5" />
@@ -794,11 +804,12 @@ const ExercisePickerModal: React.FC<ExercisePickerModalProps> = ({ onClose, onSe
                     </div>
                 </div>
                 <div className="overflow-y-auto space-y-3 flex-grow pr-1">
+                    {/* Fixed: cast Object.entries to correct type and renamed variable to avoid confusion and shadowing */}
                     {Object.keys(exercisesByCategory).length > 0 ? (
-                        Object.entries(exercisesByCategory).map(([category, exercises]) => (
+                        (Object.entries(exercisesByCategory) as [string, Exercise[]][]).map(([category, items]) => (
                             <div key={category}>
                                 <h4 className="font-semibold text-light-text-secondary dark:text-dark-text-secondary mt-2 sticky top-0 bg-light-card dark:bg-dark-card py-1">{category}</h4>
-                                {exercises.map(ex => (
+                                {items.map(ex => (
                                     <button
                                         key={ex.id}
                                         onClick={() => onSelect(ex.id)}

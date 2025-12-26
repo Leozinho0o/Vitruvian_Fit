@@ -99,24 +99,64 @@ export const HorizontalBarChart: React.FC<{ data: ChartData[]; unit: string }> =
     const maxValue = useMemo(() => Math.max(...sortedData.map(d => d.value), 1), [sortedData]);
 
     return (
-        <div className="mt-4 space-y-3 text-sm" aria-label={`Gráfico de barras de ${unit}`}>
+        <div className="mt-4 space-y-3 text-sm" aria-label={`Gráfico de barras horizontais de ${unit}`}>
             {sortedData.map((item, index) => (
-                <div key={index} className="flex items-center gap-x-2">
-                    <div className="w-2/5 text-right text-light-text dark:text-dark-text pr-2 font-medium break-words" title={item.label}>
-                        {item.label}
-                    </div>
-                    <div className="w-3/5 flex items-center gap-3">
-                        <div className="flex-grow bg-light-bg dark:bg-dark-bg rounded-full h-5 relative">
-                           <div 
-                                className="absolute top-0 left-0 h-5 bg-primary rounded-full transition-all duration-500 ease-out"
-                                style={{ width: `${(item.value / maxValue) * 100}%` }}
-                            />
+                <div key={index} className="flex flex-col gap-y-1 group relative">
+                    <div className="flex items-center gap-x-2">
+                        <div className="w-2/5 text-right text-light-text dark:text-dark-text pr-2 font-medium break-words leading-tight" title={item.label}>
+                            {item.label}
                         </div>
-                        <span className="w-10 flex-shrink-0 text-left font-semibold text-light-text-secondary dark:text-dark-text-secondary">{item.value}</span>
+                        <div className="w-3/5 flex items-center gap-3">
+                            <div className="flex-grow bg-light-bg dark:bg-dark-bg rounded-full h-5 relative overflow-hidden flex">
+                                {item.details && item.details.length > 0 ? (
+                                    item.details.map((detail, dIdx) => (
+                                        <div 
+                                            key={dIdx}
+                                            className="h-full transition-all duration-500 ease-out border-r border-black/10 last:border-r-0"
+                                            style={{ 
+                                                width: `${(detail.value / maxValue) * 100}%`,
+                                                backgroundColor: detail.color
+                                            }}
+                                            title={`${detail.name}: ${detail.value}`}
+                                        />
+                                    ))
+                                ) : (
+                                    <div 
+                                        className="h-5 bg-primary rounded-full transition-all duration-500 ease-out"
+                                        style={{ width: `${(item.value / maxValue) * 100}%` }}
+                                    />
+                                )}
+                            </div>
+                            <span className="w-10 flex-shrink-0 text-left font-semibold text-light-text-secondary dark:text-dark-text-secondary">{item.value}</span>
+                        </div>
                     </div>
+                    {/* Tooltip on hover */}
+                    {item.details && (
+                        <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 p-2 bg-dark-bg text-dark-text text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50 pointer-events-none w-max max-w-[200px]">
+                            <p className="font-bold border-b border-dark-border mb-1 pb-1">{item.label}</p>
+                            {item.details.map((d, idx) => (
+                                <div key={idx} className="flex items-center justify-between gap-4">
+                                    <div className="flex items-center">
+                                        <span className="h-2 w-2 rounded-full mr-2" style={{ backgroundColor: d.color }}></span>
+                                        <span>{d.name}:</span>
+                                    </div>
+                                    <span className="font-bold">{d.value}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             ))}
-            <div className="flex gap-2 mt-2 border-t border-light-border dark:border-dark-border pt-1 text-xs text-light-text-secondary dark:text-dark-text-secondary">
+            
+            {/* Legend for intensity if available (injected via name in details) */}
+            <div className="flex gap-2 mt-4 border-t border-light-border dark:border-dark-border pt-2 text-xs text-light-text-secondary dark:text-dark-text-secondary justify-center flex-wrap">
+                 <div className="flex items-center mr-3"><span className="h-3 w-3 rounded-full mr-1 bg-[#EF4444]"></span> Alta</div>
+                 <div className="flex items-center mr-3"><span className="h-3 w-3 rounded-full mr-1 bg-[#DB2777]"></span> Moderada</div>
+                 <div className="flex items-center mr-3"><span className="h-3 w-3 rounded-full mr-1 bg-[#F59E0B]"></span> Leve</div>
+                 <div className="flex items-center mr-3"><span className="h-3 w-3 rounded-full mr-1 bg-[#3B82F6]"></span> Muito Leve</div>
+            </div>
+
+            <div className="flex gap-2 mt-2 text-xs text-light-text-secondary dark:text-dark-text-secondary">
                 <div className="w-2/5" />
                 <div className="w-3/5 flex items-center">
                     <div className="w-full flex justify-between">

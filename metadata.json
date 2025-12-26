@@ -1,6 +1,6 @@
 {
-  "name": "Vitruvian Fit - Correções 6",
-  "description": "Última versão estável\n\nDados se mantém quando o app fecha",
+  "name": "Vitruvian Fit - Sincronização",
+  "description": "Tentativa de sincronização",
   "requestFramePermissions": [],
   "prompt": ""
 }
