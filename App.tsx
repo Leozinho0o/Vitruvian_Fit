@@ -437,6 +437,38 @@ const App: React.FC = () => {
         setIsPhysicalTestsScreenOpen(false); // Fechar tela de testes para mostrar o treino
     }, [exercises, setActiveWorkoutSession, setIsWorkoutMinimized, setIsPhysicalTestsScreenOpen]);
 
+    const startOneRMTest = useCallback((exerciseId: string) => {
+        const ex = exercises.find(e => e.id === exerciseId);
+        if (!ex) return;
+
+        // Sugestão de protocolo de 1RM: aquecimento + 3 a 5 tentativas
+        const sets: WorkoutSet[] = [
+            { reps: 10, effort: '4', completed: false }, // Aquecimento leve
+            { reps: 5, effort: '6', completed: false },  // Aquecimento moderado
+            { reps: 1, effort: '9', completed: false },  // 1ª tentativa
+            { reps: 1, effort: '10', completed: false }, // 2ª tentativa
+            { reps: 1, effort: '10', completed: false }, // 3ª tentativa
+        ];
+
+        const newSession: WorkoutSession = {
+            id: `ws_test_1rm_${Date.now()}`,
+            routineId: 'internal_test',
+            date: new Date().toISOString().split('T')[0],
+            startTime: new Date().toISOString(),
+            endTime: null,
+            loggedExercises: [{
+                exerciseId: ex.id,
+                tempId: `le-test-1rm-${Date.now()}`,
+                notes: 'Protocolo: Teste de 1RM Real (Carga Máxima)',
+                sets: sets
+            }],
+            completed: false,
+        };
+        setActiveWorkoutSession(newSession);
+        setIsWorkoutMinimized(false);
+        setIsPhysicalTestsScreenOpen(false);
+    }, [exercises, setActiveWorkoutSession, setIsWorkoutMinimized, setIsPhysicalTestsScreenOpen]);
+
     const saveEvaluation = useCallback((evaluationToSave: Evaluation) => {
         setEvaluations(prev => {
             const existingIndex = prev.findIndex(e => e.date === evaluationToSave.date);
@@ -556,6 +588,7 @@ const App: React.FC = () => {
         startWorkoutFromRoutine,
         startFiveMinTest,
         startIncrementalTest,
+        startOneRMTest,
         exportData,
         importData
     }), [
@@ -566,7 +599,7 @@ const App: React.FC = () => {
         addFolder, updateFolder, deleteFolder, reorderFolders,
         logWorkout, updateWorkout, deleteWorkout, 
         saveEvaluation, deleteEvaluation,
-        startWorkoutFromRoutine, startFiveMinTest, startIncrementalTest, exportData, importData,
+        startWorkoutFromRoutine, startFiveMinTest, startIncrementalTest, startOneRMTest, exportData, importData,
         setExercises, setRoutines, setFolders, setWorkouts, setMuscleGroups, setEvaluations, setTheme, setInfoModalContent, setActiveWorkoutSession, setIsWorkoutMinimized, setEditingExercise, setIsMeasurementsScreenOpen, setIsMuscleGroupsScreenOpen, setIsPhysicalEvaluationScreenOpen, setIsPhysicalTestsScreenOpen, setSelectedEvaluationDate
     ]);
 

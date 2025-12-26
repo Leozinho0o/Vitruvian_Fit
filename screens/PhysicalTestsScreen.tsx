@@ -131,16 +131,18 @@ const PhysicalTestsScreen: React.FC = () => {
         routines,
         evaluations,
         startFiveMinTest,
-        startIncrementalTest
+        startIncrementalTest,
+        startOneRMTest
     } = useApp();
 
-    const [is1rmMultiRepOpen, setIs1rmMultiRepOpen] = useState(true);
+    const [isEstimationOpen, setIsEstimationOpen] = useState(true);
+    const [isReal1rmOpen, setIsReal1rmOpen] = useState(false);
     const [isFiveMinTestOpen, setIsFiveMinTestOpen] = useState(false);
     const [isIncrementalTestOpen, setIsIncrementalTestOpen] = useState(false);
 
     const [selectedExercise, setSelectedExercise] = useState<Exercise | null>(null);
     const [isExercisePickerOpen, setIsExercisePickerOpen] = useState(false);
-    const [pickerTarget, setPickerTarget] = useState<'1rm' | '5min' | 'incremental'>('1rm');
+    const [pickerTarget, setPickerTarget] = useState<'estimation' | 'real1rm' | '5min' | 'incremental'>('estimation');
     
     // Date filter state
     const [startDate, setStartDate] = useState<string>('');
@@ -152,7 +154,7 @@ const PhysicalTestsScreen: React.FC = () => {
     };
 
     const oneRmStats = useMemo(() => {
-        if (!selectedExercise || pickerTarget !== '1rm') return { history: [], highest1RM: null, bestSet: null };
+        if (!selectedExercise || (pickerTarget !== 'estimation' && pickerTarget !== 'real1rm')) return { history: [], highest1RM: null, bestSet: null };
 
         const completedWorkouts = workouts.filter((w: any) => w.completed && w.date);
         const latestBodyMass = (evaluations && evaluations.length > 0) ? evaluations[0].measurements.bodyMass : undefined;
@@ -173,7 +175,12 @@ const PhysicalTestsScreen: React.FC = () => {
                 if (loggedEx.exerciseId === selectedExercise.id) {
                     for (const set of loggedEx.sets) {
                         const effortValue = parseEffortToNumber(set.effort);
-                        if (effortValue < 9) continue;
+                        
+                        // For real 1RM, we might only want to look at sets where reps === 1
+                        if (pickerTarget === 'real1rm' && set.reps !== 1) continue;
+                        
+                        // For estimation, we only look at high effort sets
+                        if (pickerTarget === 'estimation' && effortValue < 9) continue;
 
                         const reps = set.reps ?? 0;
                         const setWeight = set.value ?? 0;
@@ -238,6 +245,18 @@ const PhysicalTestsScreen: React.FC = () => {
 
     }, [workouts, selectedExercise, pickerTarget]);
 
+    // Real 1RM history (only where routineId is internal_test and reps == 1)
+    const real1rmHistory = useMemo(() => {
+        if (!selectedExercise || pickerTarget !== 'real1rm') return [];
+
+        return workouts.filter((w: WorkoutSession) => {
+            if (!w.completed || w.routineId !== 'internal_test') return false;
+            const testExercise = w.loggedExercises[0];
+            if (testExercise?.exerciseId !== selectedExercise.id) return false;
+            return testExercise.notes?.includes('Teste de 1RM Real');
+        }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    }, [workouts, selectedExercise, pickerTarget]);
+
     const { history: oneRmHistory, highest1RM, bestSet } = oneRmStats;
 
     // Effect to set initial date range and table 1RM
@@ -272,7 +291,7 @@ const PhysicalTestsScreen: React.FC = () => {
         });
     }, [startDate, endDate, oneRmHistory]);
 
-    const handleOpenPicker = (target: '1rm' | '5min' | 'incremental') => {
+    const handleOpenPicker = (target: 'estimation' | 'real1rm' | '5min' | 'incremental') => {
         setPickerTarget(target);
         setIsExercisePickerOpen(true);
     };
@@ -287,21 +306,24 @@ const PhysicalTestsScreen: React.FC = () => {
             </header>
             <main className="flex-grow overflow-y-auto overflow-x-auto p-4 md:p-6 space-y-6">
                 <div className="inline-block min-w-full space-y-4">
-                    <AccordionSection title="Teste de 1RM (Força)" isOpen={is1rmMultiRepOpen} onToggle={() => setIs1rmMultiRepOpen(v => !v)}>
+                    <AccordionSection title="Estimativa de 1RM (Repetições Múltiplas)" isOpen={isEstimationOpen} onToggle={() => setIsEstimationOpen(v => !v)}>
                         <div className="space-y-4">
+                            <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary">
+                                Projeção de carga máxima baseada em séries de alta intensidade realizadas nos treinos regulares.
+                            </p>
                             <div>
                                 <label className="block text-sm font-medium mb-1">Exercício</label>
                                 <button
-                                    onClick={() => handleOpenPicker('1rm')}
+                                    onClick={() => handleOpenPicker('estimation')}
                                     className="w-full h-10 flex items-center justify-between bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2 text-left"
                                 >
-                                    <span className={selectedExercise && pickerTarget === '1rm' ? 'text-light-text dark:text-dark-text' : 'text-light-text-secondary dark:text-dark-text-secondary'}>
-                                        {(selectedExercise && pickerTarget === '1rm') ? selectedExercise.name : 'Selecione um exercício...'}
+                                    <span className={selectedExercise && pickerTarget === 'estimation' ? 'text-light-text dark:text-dark-text' : 'text-light-text-secondary dark:text-dark-text-secondary'}>
+                                        {(selectedExercise && pickerTarget === 'estimation') ? selectedExercise.name : 'Selecione um exercício...'}
                                     </span>
                                     <SearchIcon className="h-5 w-5 text-light-text-secondary dark:text-dark-text-secondary" />
                                 </button>
                             </div>
-                            {selectedExercise && pickerTarget === '1rm' && (
+                            {selectedExercise && pickerTarget === 'estimation' && (
                                 <>
                                     <div className="flex flex-col sm:flex-row gap-4 justify-center items-center pt-4">
                                         <div>
@@ -391,6 +413,64 @@ const PhysicalTestsScreen: React.FC = () => {
                                                     </table>
                                                 </div>
                                             )}
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    </AccordionSection>
+
+                    <AccordionSection title="Teste de 1RM Real (Protocolo de Carga Máxima)" isOpen={isReal1rmOpen} onToggle={() => setIsReal1rmOpen(v => !v)}>
+                        <div className="space-y-4">
+                            <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary text-justify">
+                                Determinação direta da força máxima dinâmica. O teste consiste em encontrar a carga mais pesada que pode ser deslocada em uma única repetição técnica perfeita. Requer aquecimento progressivo e supervisão.
+                            </p>
+                            <div>
+                                <label className="block text-sm font-medium mb-1">Exercício Resistido</label>
+                                <button
+                                    onClick={() => handleOpenPicker('real1rm')}
+                                    className="w-full h-10 flex items-center justify-between bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2 text-left"
+                                >
+                                    <span className={selectedExercise && pickerTarget === 'real1rm' ? 'text-light-text dark:text-dark-text' : 'text-light-text-secondary dark:text-dark-text-secondary'}>
+                                        {(selectedExercise && pickerTarget === 'real1rm') ? selectedExercise.name : 'Selecione um exercício resistido...'}
+                                    </span>
+                                    <SearchIcon className="h-5 w-5 text-light-text-secondary dark:text-dark-text-secondary" />
+                                </button>
+                            </div>
+                            {selectedExercise && pickerTarget === 'real1rm' && (
+                                <>
+                                    <button
+                                        onClick={() => startOneRMTest(selectedExercise.id)}
+                                        className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-3 px-4 rounded-md flex items-center justify-center transition-colors shadow-lg"
+                                    >
+                                        Iniciar Protocolo de 1RM Real
+                                    </button>
+
+                                    {real1rmHistory.length > 0 && (
+                                        <div className="mt-6">
+                                            <h4 className="text-sm font-bold text-light-text dark:text-dark-text mb-3 uppercase tracking-wider flex items-center">
+                                                <CalendarIcon className="h-4 w-4 mr-2" /> Histórico de Testes Reais
+                                            </h4>
+                                            <div className="space-y-2">
+                                                {real1rmHistory.map(test => {
+                                                    const sets = test.loggedExercises[0].sets;
+                                                    const maxSet = sets.reduce((prev, curr) => 
+                                                        (curr.reps === 1 && (curr.value ?? 0) > (prev.value ?? 0)) ? curr : prev, { value: 0, reps: 0 });
+                                                    
+                                                    return (
+                                                        <div key={test.id} className="bg-light-bg dark:bg-dark-bg p-3 rounded-lg flex justify-between items-center border border-light-border dark:border-dark-border">
+                                                            <div>
+                                                                <p className="text-sm font-bold">{new Date(`${test.date}T00:00:00`).toLocaleDateString('pt-BR')}</p>
+                                                                <p className="text-xs text-light-text-secondary">{selectedExercise.name}</p>
+                                                            </div>
+                                                            <div className="text-right">
+                                                                <p className="font-black text-primary">{maxSet.value ?? '-'} <span className="text-xs font-normal">kg</span></p>
+                                                                <p className="text-[10px] text-light-text-secondary">Reps: 1</p>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
                                         </div>
                                     )}
                                 </>
@@ -519,7 +599,7 @@ const PhysicalTestsScreen: React.FC = () => {
                         setIsExercisePickerOpen(false);
                     }}
                     allExercises={exercises}
-                    categoryFilter={pickerTarget === '1rm' ? ExerciseCategory.RESISTED : ExerciseCategory.CARDIO}
+                    categoryFilter={(pickerTarget === 'estimation' || pickerTarget === 'real1rm') ? ExerciseCategory.RESISTED : ExerciseCategory.CARDIO}
                 />
             )}
         </div>

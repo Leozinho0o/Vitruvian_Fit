@@ -6,7 +6,7 @@ import { FolderIcon, PlusIcon, PencilIcon, TrashIcon, XIcon, ChevronRightIcon, P
 import { ROUTINE_COLORS, getScaleOptions } from '../constants';
 import ConfirmationModal from '../components/ConfirmationModal';
 import { formatSecondsToMMSS, parseTimeToSeconds, vibrate } from '../utils';
-import FolderStatsModal from '../components/FolderStatsModal';
+import RoutinesStatsModal from '../components/RoutinesStatsModal';
 import ExerciseInfoModal from '../components/ExerciseInfoModal';
 import CustomSelect, { CustomSelectOption } from '../components/CustomSelect';
 import EffortPicker from '../components/EffortPicker';
@@ -89,7 +89,9 @@ const RoutinesScreen = () => {
     const [editingRoutine, setEditingRoutine] = useState<Routine | null>(null);
     const [editingFolder, setEditingFolder] = useState<Folder | null>(null);
     const [isAddOptionsOpen, setIsAddOptionsOpen] = useState(false);
-    const [folderForStats, setFolderForStats] = useState<Folder | null>(null);
+    
+    // State for statistics modal (either folder or routine)
+    const [statsInfo, setStatsInfo] = useState<{ title: string; routines: Routine[] } | null>(null);
     
     const [confirmDeleteRoutineInfo, setConfirmDeleteRoutineInfo] = useState<{ id: string; name: string } | null>(null);
     const [confirmDeleteFolderInfo, setConfirmDeleteFolderInfo] = useState<{ id: string; name: string } | null>(null);
@@ -428,14 +430,14 @@ const RoutinesScreen = () => {
                 {finalFolders.map((folder: Folder) => (
                     <React.Fragment key={folder.id}>
                         {dropIndicator?.targetId === folder.id && dropIndicator.type === 'folder' && dropIndicator.position === 'top' && <div className="h-1.5 bg-secondary rounded-full my-1"></div>}
-                        <FolderItem folder={folder} routines={routinesByFolder.get(folder.id) || []} onEditRoutine={(e, routine) => { e.stopPropagation(); setEditingRoutine(routine); setIsRoutineModalOpen(true); }} onDeleteRoutine={(e, routine) => { e.stopPropagation(); setConfirmDeleteRoutineInfo({ id: routine.id, name: routine.name }); }} onDuplicateRoutine={(e, routineId) => { e.stopPropagation(); duplicateRoutine(routineId); }} onStartWorkout={(e, routineId) => { e.stopPropagation(); startWorkoutFromRoutine(routineId); }} onEditFolder={(e) => { e.stopPropagation(); setEditingFolder(folder); setIsFolderModalOpen(true); }} onDeleteFolder={(e) => { e.stopPropagation(); setConfirmDeleteFolderInfo({ id: folder.id, name: folder.name }); }} onShowStats={(e) => { e.stopPropagation(); setFolderForStats(folder); }} isDropTarget={dropTarget?.type === 'folder' && dropTarget.id === folder.id} draggingItem={draggingItem} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onTouchStart={handleTouchStart} onFolderDrop={handleFolderDrop} onItemDrop={handleItemDrop} isTouchDevice={isTouchDevice} dropIndicator={dropIndicator} />
+                        <FolderItem folder={folder} routines={routinesByFolder.get(folder.id) || []} onEditRoutine={(e, routine) => { e.stopPropagation(); setEditingRoutine(routine); setIsRoutineModalOpen(true); }} onDeleteRoutine={(e, routine) => { e.stopPropagation(); setConfirmDeleteRoutineInfo({ id: routine.id, name: routine.name }); }} onDuplicateRoutine={(e, routineId) => { e.stopPropagation(); duplicateRoutine(routineId); }} onStartWorkout={(e, routineId) => { e.stopPropagation(); startWorkoutFromRoutine(routineId); }} onEditFolder={(e) => { e.stopPropagation(); setEditingFolder(folder); setIsFolderModalOpen(true); }} onDeleteFolder={(e) => { e.stopPropagation(); setConfirmDeleteFolderInfo({ id: folder.id, name: folder.name }); }} onShowStats={(e) => { e.stopPropagation(); setStatsInfo({ title: `Estatísticas Planejadas: ${folder.name}`, routines: (routinesByFolder.get(folder.id) || []) }); }} isDropTarget={dropTarget?.type === 'folder' && dropTarget.id === folder.id} draggingItem={draggingItem} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onTouchStart={handleTouchStart} onFolderDrop={handleFolderDrop} onItemDrop={handleItemDrop} isTouchDevice={isTouchDevice} dropIndicator={dropIndicator} onShowRoutineStats={(e, routine) => { e.stopPropagation(); setStatsInfo({ title: `Estatísticas Planejadas: ${routine.name}`, routines: [routine] }); }} />
                         {dropIndicator?.targetId === folder.id && dropIndicator.type === 'folder' && dropIndicator.position === 'bottom' && <div className="h-1.5 bg-secondary rounded-full my-1"></div>}
                     </React.Fragment>
                 ))}
                 {rootRoutines.map((routine: Routine) => (
                     <React.Fragment key={routine.id}>
                         {dropIndicator?.targetId === routine.id && dropIndicator.type === 'routine' && dropIndicator.position === 'top' && <div className="h-1.5 bg-secondary rounded-full my-1"></div>}
-                        <RoutineItem routine={routine} onEdit={(e) => { e.stopPropagation(); setEditingRoutine(routine); setIsRoutineModalOpen(true); }} onDelete={(e) => { e.stopPropagation(); setConfirmDeleteRoutineInfo({ id: routine.id, name: routine.name }); }} onDuplicate={(e) => { e.stopPropagation(); duplicateRoutine(routine.id); }} onStartWorkout={(e) => { e.stopPropagation(); startWorkoutFromRoutine(routine.id); }} onDragStart={(e) => handleDragStart(e, {type: 'routine', id: routine.id, source: { folderId: routine.folderId }})} onDragEnd={handleDragEnd} onDrop={handleItemDrop} onTouchStart={handleTouchStart} isDragging={draggingItem?.type === 'routine' && draggingItem.id === routine.id} isTouchDevice={isTouchDevice} dropIndicator={dropIndicator} />
+                        <RoutineItem routine={routine} onEdit={(e) => { e.stopPropagation(); setEditingRoutine(routine); setIsRoutineModalOpen(true); }} onDelete={(e) => { e.stopPropagation(); setConfirmDeleteRoutineInfo({ id: routine.id, name: routine.name }); }} onDuplicate={(e) => { e.stopPropagation(); duplicateRoutine(routine.id); }} onStartWorkout={(e) => { e.stopPropagation(); startWorkoutFromRoutine(routine.id); }} onDragStart={(e) => handleDragStart(e, {type: 'routine', id: routine.id, source: { folderId: routine.folderId }})} onDragEnd={handleDragEnd} onDrop={handleItemDrop} onTouchStart={handleTouchStart} isDragging={draggingItem?.type === 'routine' && draggingItem.id === routine.id} isTouchDevice={isTouchDevice} dropIndicator={dropIndicator} onShowStats={(e) => { e.stopPropagation(); setStatsInfo({ title: `Estatísticas Planejadas: ${routine.name}`, routines: [routine] }); }} />
                         {dropIndicator?.targetId === routine.id && dropIndicator.type === 'routine' && dropIndicator.position === 'bottom' && <div className="h-1.5 bg-secondary rounded-full my-1"></div>}
                     </React.Fragment>
                 ))}
@@ -467,7 +469,7 @@ const RoutinesScreen = () => {
             
             {isRoutineModalOpen && <RoutineFormModal onClose={() => setIsRoutineModalOpen(false)} onSave={(data) => { if(editingRoutine) updateRoutine({ ...data, id: editingRoutine.id }); else addRoutine(data as Omit<Routine, 'id'>); setIsRoutineModalOpen(false); }} routineToEdit={editingRoutine} allExercises={exercises} allFolders={folders} />}
             {isFolderModalOpen && <FolderFormModal onClose={() => setIsFolderModalOpen(false)} onSave={(data) => { if(editingFolder) updateFolder({ ...data, id: editingFolder.id, parentId: null }); else addFolder({ ...data, parentId: null }); setIsFolderModalOpen(false); }} folderToEdit={editingFolder} />}
-            {folderForStats && <FolderStatsModal folder={folderForStats} routines={routines} exercises={exercises} evaluations={evaluations} onClose={() => setFolderForStats(null)} />}
+            {statsInfo && <RoutinesStatsModal title={statsInfo.title} analyzedRoutines={statsInfo.routines} exercises={exercises} evaluations={evaluations} onClose={() => setStatsInfo(null)} />}
             {confirmDeleteRoutineInfo && <ConfirmationModal isOpen={!!confirmDeleteRoutineInfo} onClose={() => setConfirmDeleteRoutineInfo(null)} onConfirm={handleConfirmDeleteRoutine} title="Confirmar Exclusão" message={<>Tem certeza que deseja apagar a rotina <strong>"{confirmDeleteRoutineInfo.name}"</strong>? Esta ação não pode ser desfeita.</>} />}
             {confirmDeleteFolderInfo && <ConfirmationModal isOpen={!!confirmDeleteFolderInfo} onClose={() => setConfirmDeleteFolderInfo(null)} onConfirm={handleConfirmDeleteFolder} title="Confirmar Exclusão" message={<><p>Tem certeza que deseja apagar a pasta <strong>"{confirmDeleteFolderInfo.name}"</strong>?</p><p className="mt-2 text-sm text-light-text-secondary dark:text-dark-text-secondary">As rotinas dentro dela não serão apagadas, mas movidas para fora da pasta.</p></>} />}
         </div>
@@ -493,9 +495,10 @@ interface FolderItemProps {
     onItemDrop: (e: React.DragEvent) => void;
     isTouchDevice: boolean;
     dropIndicator: { targetId: string; type: string; position: 'top' | 'bottom' } | null;
+    onShowRoutineStats: (e: React.MouseEvent, routine: Routine) => void;
 }
 
-const FolderItem = ({ folder, routines, onEditRoutine, onDeleteRoutine, onDuplicateRoutine, onStartWorkout, onEditFolder, onDeleteFolder, onShowStats, isDropTarget, draggingItem, onDragStart, onDragEnd, onTouchStart, onFolderDrop, onItemDrop, isTouchDevice, dropIndicator }: FolderItemProps) => {
+const FolderItem = ({ folder, routines, onEditRoutine, onDeleteRoutine, onDuplicateRoutine, onStartWorkout, onEditFolder, onDeleteFolder, onShowStats, isDropTarget, draggingItem, onDragStart, onDragEnd, onTouchStart, onFolderDrop, onItemDrop, isTouchDevice, dropIndicator, onShowRoutineStats }: FolderItemProps) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const folderRef = useRef<HTMLDivElement>(null);
     const folderHeaderRef = useRef<HTMLDivElement>(null);
@@ -524,8 +527,7 @@ const FolderItem = ({ folder, routines, onEditRoutine, onDeleteRoutine, onDuplic
                     {routines.map(routine => (
                         <React.Fragment key={routine.id}>
                             {dropIndicator?.targetId === routine.id && dropIndicator.type === 'routine' && dropIndicator.position === 'top' && <div className="h-1.5 bg-secondary rounded-full my-1"></div>}
-                            {/* Fixed: changed 'handleDragEnd' to 'onDragEnd' */}
-                            <RoutineItem routine={routine} onEdit={(e) => onEditRoutine(e, routine)} onDelete={(e) => onDeleteRoutine(e, routine)} onDuplicate={(e) => onDuplicateRoutine(e, routine.id)} onStartWorkout={(e) => onStartWorkout(e, routine.id)} onDragStart={(e) => onDragStart(e, {type: 'routine', id: routine.id, source: { folderId: folder.id }})} onDragEnd={onDragEnd} onDrop={onItemDrop} onTouchStart={onTouchStart} isDragging={draggingItem?.type === 'routine' && draggingItem.id === routine.id} isTouchDevice={isTouchDevice} dropIndicator={dropIndicator} />
+                            <RoutineItem routine={routine} onEdit={(e) => onEditRoutine(e, routine)} onDelete={(e) => onDeleteRoutine(e, routine)} onDuplicate={(e) => onDuplicateRoutine(e, routine.id)} onStartWorkout={(e) => onStartWorkout(e, routine.id)} onDragStart={(e) => onDragStart(e, {type: 'routine', id: routine.id, source: { folderId: folder.id }})} onDragEnd={onDragEnd} onDrop={onItemDrop} onTouchStart={onTouchStart} isDragging={draggingItem?.type === 'routine' && draggingItem.id === routine.id} isTouchDevice={isTouchDevice} dropIndicator={dropIndicator} onShowStats={(e) => onShowRoutineStats(e, routine)} />
                             {dropIndicator?.targetId === routine.id && dropIndicator.type === 'routine' && dropIndicator.position === 'bottom' && <div className="h-1.5 bg-secondary rounded-full my-1"></div>}
                         </React.Fragment>
                     ))}
@@ -549,24 +551,26 @@ interface RoutineItemProps {
     isDragging: boolean;
     isTouchDevice: boolean;
     dropIndicator: { targetId: string; type: string; position: 'top' | 'bottom' } | null;
+    onShowStats: (e: React.MouseEvent) => void;
 }
 
-const RoutineItem = ({ routine, onEdit, onDelete, onDuplicate, onStartWorkout, onDragStart, onDragEnd, onDrop, onTouchStart, isDragging, isTouchDevice, dropIndicator }: RoutineItemProps) => {
+const RoutineItem = ({ routine, onEdit, onDelete, onDuplicate, onStartWorkout, onDragStart, onDragEnd, onDrop, onTouchStart, isDragging, isTouchDevice, dropIndicator, onShowStats }: RoutineItemProps) => {
     const itemRef = useRef<HTMLDivElement>(null);
     return (
         <div ref={itemRef} data-drag-id={routine.id} data-drag-type="routine" onDrop={onDrop} className={`bg-light-card dark:bg-dark-card rounded-lg shadow-sm border-l-4 p-4 transition-opacity ${isDragging ? 'opacity-40' : 'opacity-100'}`} style={{ borderLeftColor: routine.color }}>
-            <div className="flex justify-between items-start">
-                <div className="flex items-center min-w-0">
-                    <div draggable={!isTouchDevice} onDragStart={onDragStart} onDragEnd={onDragEnd} onTouchStart={(e) => onTouchStart(e, {type: 'routine', id: routine.id, source: { folderId: routine.folderId }}, itemRef.current!)} className="p-2 -ml-2 cursor-grab"><GripVerticalIcon className="h-5 w-5 text-light-text-secondary" /></div>
-                    <div className="min-w-0">
-                        <h4 className="font-bold text-lg truncate">{routine.name}</h4>
-                        <p className="text-sm text-light-text-secondary truncate">{routine.plannedExercises.length} exercícios</p>
-                    </div>
-                </div>
-                <div className="flex items-center space-x-1">
-                    <button onClick={onDuplicate} className="p-2 hover:bg-light-bg dark:hover:bg-dark-bg rounded-full text-light-text-secondary hover:text-primary"><CopyIcon className="h-5 w-5" /></button>
-                    <button onClick={onEdit} className="p-2 hover:bg-light-bg dark:hover:bg-dark-bg rounded-full text-light-text-secondary hover:text-light-text"><PencilIcon className="h-5 w-5" /></button>
-                    <button onClick={onDelete} className="p-2 hover:bg-light-bg dark:hover:bg-dark-bg rounded-full text-light-text-secondary hover:text-red-500"><TrashIcon className="h-5 w-5" /></button>
+            {/* Action Icons Row - Moved above the name */}
+            <div className="flex justify-end items-center space-x-1 mb-2">
+                <button onClick={onShowStats} className="p-2 hover:bg-light-bg dark:hover:bg-dark-bg rounded-full text-light-text-secondary dark:text-dark-text-secondary hover:text-blue-500" aria-label={`Estatísticas de ${routine.name}`}><InfoIcon className="h-5 w-5" /></button>
+                <button onClick={onDuplicate} className="p-2 hover:bg-light-bg dark:hover:bg-dark-bg rounded-full text-light-text-secondary dark:text-dark-text-secondary hover:text-primary"><CopyIcon className="h-5 w-5" /></button>
+                <button onClick={onEdit} className="p-2 hover:bg-light-bg dark:hover:bg-dark-bg rounded-full text-light-text-secondary dark:text-dark-text-secondary hover:text-light-text"><PencilIcon className="h-5 w-5" /></button>
+                <button onClick={onDelete} className="p-2 hover:bg-light-bg dark:hover:bg-dark-bg rounded-full text-light-text-secondary dark:text-dark-text-secondary hover:text-red-500"><TrashIcon className="h-5 w-5" /></button>
+            </div>
+            
+            <div className="flex items-center min-w-0">
+                <div draggable={!isTouchDevice} onDragStart={onDragStart} onDragEnd={onDragEnd} onTouchStart={(e) => onTouchStart(e, {type: 'routine', id: routine.id, source: { folderId: routine.folderId }}, itemRef.current!)} className="p-2 -ml-2 cursor-grab"><GripVerticalIcon className="h-5 w-5 text-light-text-secondary" /></div>
+                <div className="min-w-0 flex-grow">
+                    <h4 className="font-bold text-lg truncate leading-tight">{routine.name}</h4>
+                    <p className="text-sm text-light-text-secondary truncate">{routine.plannedExercises.length} exercícios</p>
                 </div>
             </div>
             <button onClick={onStartWorkout} className="mt-4 w-full bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-md flex items-center justify-center transition-colors"><PlayIcon className="h-5 w-5 mr-2" /> Iniciar Treino</button>
@@ -584,7 +588,6 @@ const RoutineFormModal = ({ onClose, onSave, routineToEdit, allExercises, allFol
     const [isExercisePickerOpen, setIsExercisePickerOpen] = useState(false);
     const [infoExercise, setInfoExercise] = useState<Exercise | null>(null);
 
-    /* Fixed: Folder object does not have 'label' property, using 'name' */
     const folderOptions = [{ value: 'none', label: 'Nenhuma Pasta' }, ...allFolders.map(f => ({ value: f.id, label: f.name }))];
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -725,7 +728,7 @@ const ExercisePickerModal = ({ onClose, onSelect, allExercises }: { onClose: () 
         <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[60] p-4">
             <div className="bg-light-card dark:bg-dark-card rounded-lg p-6 w-full max-w-md max-h-[80vh] flex flex-col shadow-2xl">
                 <div className="flex justify-between items-center mb-4"><h3 className="text-xl font-bold">Selecionar Exercício</h3><button onClick={onClose}><XIcon className="h-6 w-6" /></button></div>
-                <div className="relative mb-4"><SearchIcon className="h-5 w-5 absolute left-3 top-1/2 -translate-y-1/2 text-light-text-secondary" /><input type="text" value={query} onChange={e => setQuery(e.target.value)} placeholder="Pesquisar..." className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md pl-10 pr-4 py-2" autoFocus /></div>
+                <div className="relative mb-4"><SearchIcon className="h-5 w-5 absolute left-3 top-1/2 -translate-y-1/2 text-light-text-secondary" /><input type="text" value={query} onChange={e => setQuery(e.target.value)} placeholder="Pesquisar..." className="w-full bg-light-bg dark:bg-dark-border border border-light-border dark:border-dark-border rounded-md pl-10 pr-4 py-2" autoFocus /></div>
                 <div className="flex-grow overflow-y-auto space-y-2">
                     {filtered.map(ex => (
                         <button key={ex.id} onClick={() => onSelect(ex)} className="w-full text-left p-3 rounded-md flex items-center gap-3 hover:bg-light-bg dark:hover:bg-dark-bg transition-colors">

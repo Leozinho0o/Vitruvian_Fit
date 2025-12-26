@@ -1,8 +1,8 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
 import { useApp } from '../App';
-import { Exercise, Unit, MeasurementType, PerceivedExertionScale, ExerciseCategory } from '../types';
-import { XIcon } from './Icons';
+import { Exercise, Unit, MeasurementType, PerceivedExertionScale, ExerciseCategory, WorkoutSession } from '../types';
+import { XIcon, CalendarIcon, BarChartIcon } from './Icons';
 import { getScaleOptions } from '../constants';
 import { parseEffortToNumber, formatSecondsToMMSS } from '../utils';
 import { ChartData } from './Charts';
@@ -31,6 +31,15 @@ const repEstimationTableData = [
     { percentage: 80, reps: '7 a 8' },
     { percentage: 75, reps: '9 a 10' },
     { percentage: 70, reps: '11 a 12' },
+];
+
+const cardioZonesDefinition = [
+    { label: 'Supramáximo', range: '> 100%', minFactor: 1.01, maxFactor: 1.20, color: 'text-red-800 dark:text-red-200', bgColor: 'bg-red-800' },
+    { label: 'Máximo (100%)', range: '100%', minFactor: 1.0, maxFactor: 1.0, color: 'text-red-500', bgColor: 'bg-red-500' },
+    { label: 'Severo', range: '85-99%', minFactor: 0.85, maxFactor: 0.99, color: 'text-orange-500', bgColor: 'bg-orange-500' },
+    { label: 'Pesado', range: '63-84%', minFactor: 0.63, maxFactor: 0.84, color: 'text-amber-500', bgColor: 'bg-amber-500' },
+    { label: 'Moderado', range: '45-62%', minFactor: 0.45, maxFactor: 0.62, color: 'text-emerald-500', bgColor: 'bg-emerald-500' },
+    { label: 'Leve', range: '< 45%', minFactor: 0, maxFactor: 0.44, color: 'text-blue-500', bgColor: 'bg-blue-500' },
 ];
 
 const ExerciseInfoModal: React.FC<ExerciseInfoModalProps> = ({ exercise, onClose }) => {
@@ -168,26 +177,32 @@ const ExerciseInfoModal: React.FC<ExerciseInfoModalProps> = ({ exercise, onClose
         const completedWorkouts = workouts.filter(w => w.completed && w.date);
         switch (exercise.category) {
             case ExerciseCategory.CARDIO: {
-                if (exercise.unit !== Unit.SPEED) return { type: 'none', data: null };
-                let maxSpeed = 0;
-                let timeAtMaxSpeed = 0;
-                for (const session of completedWorkouts) {
-                    for (const loggedEx of session.loggedExercises) {
-                        if (loggedEx.exerciseId === exercise.id) {
-                            for (const set of loggedEx.sets) {
-                                const speed = set.value ?? 0;
-                                const time = set.time ?? 0;
-                                if (speed > maxSpeed) {
-                                    maxSpeed = speed;
-                                    timeAtMaxSpeed = time;
-                                } else if (speed === maxSpeed && speed > 0) {
-                                    timeAtMaxSpeed = Math.max(timeAtMaxSpeed, time);
-                                }
-                            }
-                        }
-                    }
+                // Find latest performance test for this exercise
+                const tests = workouts.filter(w => {
+                    if (!w.completed || w.routineId !== 'internal_test') return false;
+                    const logEx = w.loggedExercises[0];
+                    return logEx?.exerciseId === exercise.id;
+                }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+                const latestTest = tests.length > 0 ? tests[0] : null;
+                if (!latestTest) return { type: 'none' as const, data: null };
+
+                const logEx = latestTest.loggedExercises[0];
+                const is5min = logEx.notes?.includes('5 minutos');
+                const completedSets = logEx.sets.filter(s => s.completed);
+                const referenceValue = is5min ? (logEx.sets[0].value ?? 0) : (completedSets[completedSets.length - 1]?.value ?? 0);
+
+                if (referenceValue > 0) {
+                    return { 
+                        type: 'cardio_test' as const, 
+                        data: { 
+                            testType: is5min ? '5 Minutos' : 'Incremental',
+                            date: latestTest.date,
+                            value: referenceValue,
+                            unit: exercise.unit
+                        } 
+                    };
                 }
-                if (maxSpeed > 0) return { type: 'cardio' as const, data: { maxSpeed, timeAtMaxSpeed } };
                 return { type: 'none' as const, data: null };
             }
             case ExerciseCategory.FLEXIBILITY: {
@@ -365,15 +380,60 @@ const ExerciseInfoModal: React.FC<ExerciseInfoModalProps> = ({ exercise, onClose
                                     <p className="text-4xl font-bold text-secondary">{stats.data.repsAtMaxWeight}<span className="text-2xl font-medium"> reps</span></p>
                                 </div>
                             </>
-                        ) : stats?.type === 'cardio' && stats.data ? (
+                        ) : stats?.type === 'cardio_test' && stats.data ? (
                             <>
-                                <div className="text-center bg-light-bg dark:bg-dark-bg p-4 rounded-lg">
-                                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary">Maior Velocidade Registrada</p>
-                                    <p className="text-4xl font-bold text-primary">{stats.data.maxSpeed}<span className="text-2xl font-medium"> km/h</span></p>
+                                <div className="text-center bg-light-bg dark:bg-dark-bg p-4 rounded-lg border-2 border-secondary/20 mb-4">
+                                    <p className="text-[10px] font-bold uppercase tracking-widest text-secondary mb-1">Referência (100%): Teste {stats.data.testType}</p>
+                                    <p className="text-4xl font-black text-secondary">{stats.data.value}<span className="text-xl font-medium"> {stats.data.unit}</span></p>
+                                    <p className="text-[10px] text-light-text-secondary mt-1 flex items-center justify-center">
+                                        <CalendarIcon className="h-3 w-3 mr-1" /> Realizado em {new Date(`${stats.data.date}T00:00:00`).toLocaleDateString('pt-BR')}
+                                    </p>
                                 </div>
-                                <div className="text-center bg-light-bg dark:bg-dark-bg p-4 rounded-lg">
-                                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary">Tempo nessa Velocidade</p>
-                                    <p className="text-4xl font-bold text-secondary">{formatSecondsToMMSS(stats.data.timeAtMaxSpeed)}</p>
+                                
+                                <div className="space-y-4">
+                                    <h4 className="text-md font-bold text-center flex items-center justify-center">
+                                        <BarChartIcon className="h-5 w-5 mr-2 text-primary" /> Zonas de Treinamento
+                                    </h4>
+                                    <div className="overflow-hidden rounded-lg border border-light-border dark:border-dark-border">
+                                        <table className="w-full text-xs text-left">
+                                            <thead className="bg-light-bg dark:bg-gray-800 text-light-text-secondary uppercase">
+                                                <tr>
+                                                    <th className="px-3 py-2">Zona</th>
+                                                    <th className="px-3 py-2 text-center">% Ref</th>
+                                                    <th className="px-3 py-2 text-right">Alvo ({stats.data.unit === Unit.NONE ? 'Intens.' : stats.data.unit})</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-light-border dark:divide-dark-border">
+                                                {cardioZonesDefinition.map(zone => {
+                                                    const minVal = (zone.minFactor * stats.data.value).toFixed(1);
+                                                    const maxVal = (zone.maxFactor * stats.data.value).toFixed(1);
+                                                    const displayTarget = zone.minFactor === zone.maxFactor 
+                                                        ? `${minVal}` 
+                                                        : zone.minFactor === 0 
+                                                            ? `< ${maxVal}`
+                                                            : zone.minFactor > 1 
+                                                                ? `> ${stats.data.value}`
+                                                                : `${minVal} - ${maxVal}`;
+
+                                                    return (
+                                                        <tr key={zone.label} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                                                            <td className="px-3 py-3">
+                                                                <div className="flex items-center">
+                                                                    <span className={`w-2 h-2 rounded-full mr-2 ${zone.bgColor}`}></span>
+                                                                    <span className={`font-semibold ${zone.color}`}>{zone.label}</span>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-3 py-3 text-center font-medium opacity-70">{zone.range}</td>
+                                                            <td className="px-3 py-3 text-right font-black">{displayTarget}</td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <p className="text-[10px] text-light-text-secondary italic leading-tight text-justify px-2">
+                                        *Zonas baseadas no modelo de domínios de intensidade (Moderado, Pesado, Severo e Supramáximo). Use estas referências para prescrever a intensidade dos seus treinos regulares.
+                                    </p>
                                 </div>
                             </>
                         ) : stats?.type === 'flexibility' && stats.data ? (
@@ -391,6 +451,9 @@ const ExerciseInfoModal: React.FC<ExerciseInfoModalProps> = ({ exercise, onClose
                             <div className="text-center text-light-text-secondary dark:text-dark-text-secondary p-6 bg-light-bg dark:bg-dark-bg rounded-lg">
                                 <p>Nenhum registro de treino relevante encontrado para este exercício.</p>
                                 <p className="text-xs mt-2">Certifique-se de que o exercício foi configurado corretamente e que você já registrou treinos concluídos com ele.</p>
+                                {exercise.category === ExerciseCategory.CARDIO && (
+                                    <p className="text-xs mt-4 font-bold text-primary italic">Dica: Realize um Teste de 5 Minutos ou Incremental para gerar a tabela de zonas!</p>
+                                )}
                             </div>
                         )}
                     </div>

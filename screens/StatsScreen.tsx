@@ -2,7 +2,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useApp } from '../App';
 import { WorkoutSession, Routine, ExerciseCategory, Unit, MeasurementType, Evaluation, Exercise } from '../types';
-import { ChevronRightIcon, FileTextIcon, BarChartIcon, SettingsIcon } from '../components/Icons';
+import { ChevronRightIcon, FileTextIcon, BarChartIcon, SettingsIcon, CalendarIcon } from '../components/Icons';
 import { BarChart, HorizontalBarChart, ChartData } from '../components/Charts';
 import { parseEffortToNumber, formatSecondsToMMSS } from '../utils';
 import CustomSelect from '../components/CustomSelect';
@@ -160,6 +160,36 @@ const StatsScreen: React.FC = () => {
         return map;
     }, [workouts]);
 
+    // Auto-select the latest test for each cardio exercise
+    useEffect(() => {
+        const newRefs = { ...selectedReferences };
+        let changed = false;
+
+        cardioExercisesInPeriod.forEach(ex => {
+            if (!newRefs[ex.id]) {
+                const tests = availableTestsByExercise[ex.id];
+                if (tests && tests.length > 0) {
+                    newRefs[ex.id] = tests[0].value; // First is most recent
+                    changed = true;
+                }
+            }
+        });
+
+        if (changed) {
+            setSelectedReferences(newRefs);
+        }
+    }, [cardioExercisesInPeriod, availableTestsByExercise]);
+
+    // Identify cardio performance tests (5min and Incremental) for the period to show in a table
+    const cardioTestsInPeriod = useMemo(() => {
+        return filteredWorkouts.filter(w => {
+            if (w.routineId !== 'internal_test') return false;
+            const logEx = w.loggedExercises[0];
+            const ex = exercises.find(e => e.id === logEx?.exerciseId);
+            return ex?.category === ExerciseCategory.CARDIO;
+        });
+    }, [filteredWorkouts, exercises]);
+
     // Cardiovascular intensity distribution calculation
     const cardioIntensityDistributionData = useMemo<ChartData[]>(() => {
         // Zonas
@@ -252,14 +282,27 @@ const StatsScreen: React.FC = () => {
             if (dataByDate.has(dateKey)) {
                 const dayData = dataByDate.get(dateKey)!;
                 const durationInMinutes = Math.round((w.duration || 0) / 60);
-                const routine = routines.find((r: Routine) => r.id === w.routineId);
+                
+                let name = 'Rotina Apagada';
+                let color = '#808080';
+
+                if (w.routineId === 'internal_test') {
+                    name = 'Teste Físico';
+                    color = '#6B7280';
+                } else {
+                    const routine = routines.find((r: Routine) => r.id === w.routineId);
+                    if (routine) {
+                        name = routine.name;
+                        color = routine.color;
+                    }
+                }
                 
                 if (durationInMinutes > 0) {
                     dayData.totalDuration += durationInMinutes;
                     dayData.details.push({
-                        name: routine?.name || 'Rotina Apagada',
+                        name,
                         value: durationInMinutes,
-                        color: routine?.color || '#808080' // Gray for deleted routines
+                        color
                     });
                 }
             }
@@ -294,7 +337,19 @@ const StatsScreen: React.FC = () => {
             if (!dataByDate.has(dateKey)) return;
 
             const dayData = dataByDate.get(dateKey)!;
-            const routine = routines.find((r: Routine) => r.id === w.routineId);
+            
+            let name = 'Rotina Apagada';
+            let color = '#808080';
+            if (w.routineId === 'internal_test') {
+                name = 'Teste Físico';
+                color = '#6B7280';
+            } else {
+                const routine = routines.find((r: Routine) => r.id === w.routineId);
+                if (routine) {
+                    name = routine.name;
+                    color = routine.color;
+                }
+            }
             
             let routineVolume = 0;
             w.loggedExercises.forEach(loggedEx => {
@@ -302,7 +357,7 @@ const StatsScreen: React.FC = () => {
                 if (exercise && exercise.category === ExerciseCategory.RESISTED && exercise.unit === Unit.KG) {
                     loggedEx.sets.forEach(set => {
                         const effortValue = parseEffortToNumber(set.effort);
-                        if (effortValue >= 7) {
+                        if (effortValue >= 7 || w.routineId === 'internal_test') {
                             const reps = set.reps ?? 0;
                             const setValue = (set.value ?? 0) + (loggedEx.barbellWeight ?? 0);
                             let calculatedLoad;
@@ -324,9 +379,9 @@ const StatsScreen: React.FC = () => {
             if (routineVolume > 0) {
                 dayData.totalVolume += routineVolume;
                 dayData.details.push({
-                    name: routine?.name || 'Rotina Apagada',
+                    name,
                     value: routineVolume,
-                    color: routine?.color || '#808080'
+                    color
                 });
             }
         });
@@ -360,7 +415,19 @@ const StatsScreen: React.FC = () => {
             if (!dataByDate.has(dateKey)) return;
     
             const dayData = dataByDate.get(dateKey)!;
-            const routine = routines.find((r: Routine) => r.id === w.routineId);
+            
+            let name = 'Rotina Apagada';
+            let color = '#808080';
+            if (w.routineId === 'internal_test') {
+                name = 'Teste Físico';
+                color = '#6B7280';
+            } else {
+                const routine = routines.find((r: Routine) => r.id === w.routineId);
+                if (routine) {
+                    name = routine.name;
+                    color = routine.color;
+                }
+            }
             
             let routineInternalLoad = 0;
             w.loggedExercises.forEach(loggedEx => {
@@ -391,9 +458,9 @@ const StatsScreen: React.FC = () => {
             if (routineInternalLoad > 0) {
                 dayData.totalLoad += routineInternalLoad;
                 dayData.details.push({
-                    name: routine?.name || 'Rotina Apagada',
+                    name,
                     value: routineInternalLoad,
-                    color: routine?.color || '#808080'
+                    color
                 });
             }
         });
@@ -454,8 +521,8 @@ const StatsScreen: React.FC = () => {
 
                 loggedEx.sets.forEach(set => {
                     const effortValue = parseEffortToNumber(set.effort);
-                    // Apenas séries efetivas (>= 7)
-                    if (effortValue < 7) return;
+                    // Apenas séries efetivas (>= 7) ou testes de força
+                    if (effortValue < 7 && w.routineId !== 'internal_test') return;
 
                     let intensityCategory = 'Moderada'; // Default caso não haja 1RM estimado (considera moderado por ser esforço >= 7)
 
@@ -531,7 +598,19 @@ const StatsScreen: React.FC = () => {
             if (!dataByDate.has(dateKey)) return;
     
             const dayData = dataByDate.get(dateKey)!;
-            const routine = routines.find((r: Routine) => r.id === w.routineId);
+            
+            let name = 'Rotina Apagada';
+            let color = '#808080';
+            if (w.routineId === 'internal_test') {
+                name = 'Teste Físico';
+                color = '#6B7280';
+            } else {
+                const routine = routines.find((r: Routine) => r.id === w.routineId);
+                if (routine) {
+                    name = routine.name;
+                    color = routine.color;
+                }
+            }
             
             let routineCardioLoad = 0;
             w.loggedExercises.forEach(loggedEx => {
@@ -551,9 +630,9 @@ const StatsScreen: React.FC = () => {
             if (routineCardioLoad > 0) {
                 dayData.totalLoad += routineCardioLoad;
                 dayData.details.push({
-                    name: routine?.name || 'Rotina Apagada',
+                    name,
                     value: routineCardioLoad,
-                    color: routine?.color || '#808080'
+                    color
                 });
             }
         });
@@ -586,7 +665,19 @@ const StatsScreen: React.FC = () => {
             if (!dataByDate.has(dateKey)) return;
     
             const dayData = dataByDate.get(dateKey)!;
-            const routine = routines.find((r: Routine) => r.id === w.routineId);
+            
+            let name = 'Rotina Apagada';
+            let color = '#808080';
+            if (w.routineId === 'internal_test') {
+                name = 'Teste Físico';
+                color = '#6B7280';
+            } else {
+                const routine = routines.find((r: Routine) => r.id === w.routineId);
+                if (routine) {
+                    name = routine.name;
+                    color = routine.color;
+                }
+            }
             
             let routineCardioInternalLoad = 0;
             w.loggedExercises.forEach(loggedEx => {
@@ -607,9 +698,9 @@ const StatsScreen: React.FC = () => {
             if (routineCardioInternalLoad > 0) {
                 dayData.totalLoad += routineCardioInternalLoad;
                 dayData.details.push({
-                    name: routine?.name || 'Rotina Apagada',
+                    name,
                     value: routineCardioInternalLoad,
-                    color: routine?.color || '#808080'
+                    color
                 });
             }
         });
@@ -642,7 +733,19 @@ const StatsScreen: React.FC = () => {
             if (!dataByDate.has(dateKey)) return;
     
             const dayData = dataByDate.get(dateKey)!;
-            const routine = routines.find((r: Routine) => r.id === w.routineId);
+            
+            let name = 'Rotina Apagada';
+            let color = '#808080';
+            if (w.routineId === 'internal_test') {
+                name = 'Teste Físico';
+                color = '#6B7280';
+            } else {
+                const routine = routines.find((r: Routine) => r.id === w.routineId);
+                if (routine) {
+                    name = routine.name;
+                    color = routine.color;
+                }
+            }
             
             let routineFlexibilityLoad = 0;
             w.loggedExercises.forEach(loggedEx => {
@@ -669,9 +772,9 @@ const StatsScreen: React.FC = () => {
             if (routineFlexibilityLoad > 0) {
                 dayData.totalLoad += routineFlexibilityLoad;
                 dayData.details.push({
-                    name: routine?.name || 'Rotina Apagada',
+                    name,
                     value: routineFlexibilityLoad,
-                    color: routine?.color || '#808080'
+                    color
                 });
             }
         });
@@ -804,7 +907,7 @@ const StatsScreen: React.FC = () => {
                             <div className="pt-4 space-y-12">
                                 <div className="pl-8">
                                     <h3 className="text-lg font-semibold text-light-text dark:text-dark-text mb-1">Carga Externa (Kg)</h3>
-                                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Cálculo: Soma de (repetições x carga) para todas as séries com esforço &ge; 7.</p>
+                                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Cálculo: Soma de (repetições x carga) para todas as séries.</p>
                                     <BarChart data={dailyVolumeData} isStacked={true} unit="Kg" />
                                 </div>
                                 <div className="pl-8">
@@ -814,7 +917,7 @@ const StatsScreen: React.FC = () => {
                                 </div>
                                 <div>
                                     <h3 className="text-lg font-semibold text-light-text dark:text-dark-text mb-1">Séries por Grupo Muscular (Intensidade por 1RM)</h3>
-                                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Soma das séries efetivas (esforço &ge; 7) classificadas pela porcentagem da carga em relação ao seu 1RM histórico estimado.</p>
+                                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Soma das séries efetivas classificadas pela porcentagem da carga em relação ao seu 1RM histórico estimado.</p>
                                     <HorizontalBarChart data={seriesByMuscleGroupData} unit="séries" />
                                 </div>
                             </div>
@@ -845,6 +948,60 @@ const StatsScreen: React.FC = () => {
                                     <h3 className="text-lg font-semibold text-light-text dark:text-dark-text mb-1">Carga Interna (UA)</h3>
                                     <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Cálculo: Soma de (tempo em min x (velocidade ou distância) x PSE) para todas as séries.</p>
                                     <BarChart data={dailyCardioInternalLoadData} isStacked={true} unit="UA" />
+                                </div>
+
+                                {/* Cardiovascular Performance Tests History */}
+                                <div className="border-t border-light-border dark:border-dark-border pt-8">
+                                    <div className="mb-4">
+                                        <h3 className="text-lg font-semibold text-light-text dark:text-dark-text flex items-center">
+                                            <CalendarIcon className="h-5 w-5 mr-2 text-primary" /> Histórico de Testes de Desempenho
+                                        </h3>
+                                        <p className="text-xs text-light-text-secondary dark:text-dark-text-secondary">Resultados dos testes de 5 minutos e incrementais realizados no período.</p>
+                                    </div>
+                                    
+                                    {cardioTestsInPeriod.length > 0 ? (
+                                        <div className="bg-light-bg dark:bg-dark-bg rounded-lg overflow-hidden border border-light-border dark:border-dark-border">
+                                            <table className="w-full text-sm text-left">
+                                                <thead className="text-xs uppercase bg-gray-100 dark:bg-gray-800 text-light-text-secondary dark:text-dark-text-secondary">
+                                                    <tr>
+                                                        <th className="px-4 py-2">Data</th>
+                                                        <th className="px-4 py-2">Exercício</th>
+                                                        <th className="px-4 py-2">Tipo</th>
+                                                        <th className="px-4 py-2 text-right">Resultado</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-light-border dark:divide-dark-border">
+                                                    {cardioTestsInPeriod.map(test => {
+                                                        const logEx = test.loggedExercises[0];
+                                                        const ex = exercises.find(e => e.id === logEx?.exerciseId);
+                                                        const is5min = logEx?.notes?.includes('5 minutos');
+                                                        const typeLabel = is5min ? '5 min' : 'Inc';
+                                                        const completedSets = logEx.sets.filter(s => s.completed);
+                                                        const resultValue = is5min ? (logEx.sets[0].value ?? '-') : (completedSets[completedSets.length - 1]?.value ?? '-');
+
+                                                        return (
+                                                            <tr key={test.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                                                                <td className="px-4 py-3 font-medium">{new Date(`${test.date}T00:00:00`).toLocaleDateString('pt-BR')}</td>
+                                                                <td className="px-4 py-3 truncate max-w-[120px]">{ex?.name || 'Desconhecido'}</td>
+                                                                <td className="px-4 py-3">
+                                                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${is5min ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'}`}>
+                                                                        {typeLabel}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="px-4 py-3 text-right font-bold text-secondary">
+                                                                    {resultValue} <span className="text-[10px] font-normal opacity-70">{ex?.unit}</span>
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    ) : (
+                                        <p className="text-sm text-light-text-secondary italic text-center py-4 border border-dashed border-light-border dark:border-dark-border rounded-lg">
+                                            Nenhum teste físico realizado no intervalo selecionado.
+                                        </p>
+                                    )}
                                 </div>
 
                                 {/* Cardiovascular Intensity Distribution Section */}

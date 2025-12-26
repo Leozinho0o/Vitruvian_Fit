@@ -123,30 +123,6 @@ const WorkoutSessionScreen: React.FC = () => {
         };
     }, [activeWorkoutSession]);
     
-    const historicalData = useMemo(() => {
-        if (!activeWorkoutSession) return new Map<string, LoggedExercise>();
-
-        const historyMap = new Map<string, LoggedExercise>();
-        const relevantExerciseIds = activeWorkoutSession.loggedExercises.map(ex => ex.exerciseId);
-        
-        const completedWorkouts = workouts
-            .filter((w: WorkoutSession) => w.completed && w.date)
-            .sort((a: WorkoutSession, b: WorkoutSession) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-        for (const exerciseId of relevantExerciseIds) {
-            if (historyMap.has(exerciseId)) continue;
-
-            for (const workout of completedWorkouts) {
-                const loggedEx = workout.loggedExercises.find(le => le.exerciseId === exerciseId);
-                if (loggedEx && loggedEx.sets.length > 0) {
-                    historyMap.set(exerciseId, loggedEx);
-                    break;
-                }
-            }
-        }
-        return historyMap;
-    }, [activeWorkoutSession, workouts]);
-
     const scrollLoop = () => {
         if (scrollDirectionRef.current && scrollContainerRef.current) {
             const container = scrollContainerRef.current;
@@ -525,7 +501,6 @@ const WorkoutSessionScreen: React.FC = () => {
                     const exercise = exercises.find(e => e.id === loggedEx.exerciseId);
                     if (!exercise) return null;
                     
-                    const lastLoggedExercise = historicalData.get(exercise.id);
                     const scaleOptions = getScaleOptions(exercise.perceivedExertionScale);
                     const exerciseSets = loggedEx.sets || [];
                     const setsToRender = exerciseSets.length > 0 ? exerciseSets : [{}];
@@ -601,16 +576,6 @@ const WorkoutSessionScreen: React.FC = () => {
                                         const valuePlaceholder = originalSet.value?.toString() ?? '';
                                         const effortFromPlan = originalSet.effort;
 
-                                        const lastSetData = lastLoggedExercise?.sets[setIndex];
-                                        let lastSetString = '';
-                                        if (lastSetData) {
-                                            const parts = [];
-                                            if (lastSetData.reps !== undefined) parts.push(`${lastSetData.reps} reps`);
-                                            if (lastSetData.value !== undefined && exercise.unit === Unit.KG) parts.push(`${lastSetData.value}kg`);
-                                            if (lastSetData.effort) parts.push(`PSE ${lastSetData.effort}`);
-                                            if (parts.length > 0) lastSetString = `Último: ${parts.join(' x ')}`;
-                                        }
-                                        
                                         return (
                                             <div key={setIndex} className={`bg-light-bg dark:bg-dark-bg p-3 rounded-lg space-y-3 transition-opacity ${set.completed ? 'opacity-50' : ''}`}>
                                                 <div className="flex justify-between items-center">
@@ -624,7 +589,6 @@ const WorkoutSessionScreen: React.FC = () => {
                                                         <TrashIcon className="h-5 w-5" />
                                                     </button>
                                                 </div>
-                                                {lastSetString && (<div className="w-full text-center text-xs text-secondary dark:text-pink-400" aria-label={`Dados da última vez: ${lastSetString}`}>{lastSetString}</div>)}
                                                 <div className="flex items-end gap-3">
                                                     <div className="grow-[2] shrink basis-[80px]">
                                                         <label className="block text-xs font-medium mb-1 text-light-text-secondary dark:text-dark-text-secondary">{isCountType ? 'Repetições' : 'Tempo'}</label>

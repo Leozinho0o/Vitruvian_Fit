@@ -1,6 +1,7 @@
+
 import React, { useState, useMemo, useCallback, Fragment, useRef, useEffect } from 'react';
 import { useApp } from '../App';
-import { WorkoutSession, Routine, Folder, PlannedExercise, Unit, Exercise, WorkoutSet, MeasurementType } from '../types';
+import { WorkoutSession, Routine, Folder, PlannedExercise, Unit, Exercise, WorkoutSet, MeasurementType, ExerciseCategory } from '../types';
 import { ChevronLeftIcon, ChevronRightIcon, PlayIcon, TrashIcon, XIcon, PlusIcon, PencilIcon, SearchIcon, MinusIcon } from '../components/Icons';
 import { getScaleOptions } from '../constants';
 import ConfirmationModal from '../components/ConfirmationModal';
@@ -23,7 +24,7 @@ const isSameDay = (d1: Date, d2: Date) =>
 const formatDate = (date: Date) => date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
 
 interface GhostWorkoutItemProps {
-    routine: Routine | undefined;
+    routine: Routine | { name: string, color: string } | undefined;
     x: number;
     y: number;
 }
@@ -64,7 +65,7 @@ const CalendarScreen: React.FC = () => {
 
     // For touch drag & drop
     const [ghostElement, setGhostElement] = useState<GhostWorkoutItemProps | null>(null);
-    const dragStartInfo = useRef<{ x: number; y: number; workout: WorkoutSession; routine: Routine | undefined; } | null>(null);
+    const dragStartInfo = useRef<{ x: number; y: number; workout: WorkoutSession; routine: Routine | { name: string, color: string } | undefined; } | null>(null);
     const dragTimeoutRef = useRef<number | null>(null);
 
     // Zoom state
@@ -217,7 +218,7 @@ const CalendarScreen: React.FC = () => {
 
 
     // --- Touch Handlers for Mobile Drag & Drop ---
-    const handleTouchStart = (e: React.TouchEvent, workout: WorkoutSession, routine: Routine | undefined) => {
+    const handleTouchStart = (e: React.TouchEvent, workout: WorkoutSession, routine: Routine | { name: string, color: string } | undefined) => {
         if (e.touches.length > 1) return;
 
         dragStartInfo.current = {
@@ -344,7 +345,13 @@ const CalendarScreen: React.FC = () => {
                                             </span>
                                             <div className="mt-1 space-y-1">
                                                 {workoutsByDate.get(dayString)?.map(workout => {
-                                                    const routine = routines.find((r: Routine) => r.id === workout.routineId);
+                                                    let routine: Routine | { name: string, color: string } | undefined = routines.find((r: Routine) => r.id === workout.routineId);
+                                                    
+                                                    // Handle internal performance tests
+                                                    if (!routine && workout.routineId === 'internal_test') {
+                                                        routine = { name: 'Teste Físico', color: '#6B7280' };
+                                                    }
+
                                                     const textColorClass = getContrastYIQ(routine?.color);
                                                     return (
                                                         <div key={workout.id} 
@@ -363,7 +370,7 @@ const CalendarScreen: React.FC = () => {
                                                              }}
                                                              className={`text-sm p-1 rounded flex items-start cursor-grab transition-opacity ${textColorClass} ${draggingWorkoutId === workout.id ? 'opacity-50' : workout.completed ? 'opacity-60' : ''}`}
                                                              style={{ backgroundColor: routine?.color, touchAction: 'none' }}>
-                                                             <span className="font-bold w-full break-words">{routine?.name}</span>
+                                                             <span className="font-bold w-full break-words leading-tight">{routine?.name}</span>
                                                         </div>
                                                     );
                                                 })}
@@ -389,7 +396,7 @@ const CalendarScreen: React.FC = () => {
             {selectedWorkout && (
                 <WorkoutDetailModal
                     workout={selectedWorkout}
-                    routine={routines.find((r:Routine) => r.id === selectedWorkout.routineId)}
+                    routine={routines.find((r:Routine) => r.id === selectedWorkout.routineId) || (selectedWorkout.routineId === 'internal_test' ? { id: 'internal_test', name: 'Teste Físico', color: '#6B7280', plannedExercises: [], folderId: null } : undefined)}
                     exercises={exercises}
                     onClose={() => setSelectedWorkout(null)}
                     onDelete={() => setConfirmDeleteWorkoutId(selectedWorkout.id)}
@@ -527,7 +534,7 @@ const AddWorkoutModal: React.FC<AddWorkoutModalProps> = ({ onClose, onSave, date
                         </button>
 
                         {isPickerOpen && (
-                            <div className="absolute top-full mt-1 w-full bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-lg shadow-xl z-20 p-2">
+                            <div className="absolute top-full mt-1 w-full max-h-60 bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-lg shadow-xl z-20 p-2">
                                 <div className="relative mb-2">
                                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                         <SearchIcon className="h-5 w-5 text-light-text-secondary dark:text-dark-text-secondary" />
@@ -541,7 +548,7 @@ const AddWorkoutModal: React.FC<AddWorkoutModalProps> = ({ onClose, onSave, date
                                         autoFocus
                                     />
                                 </div>
-                                <div className="max-h-60 overflow-y-auto">
+                                <div className="max-h-48 overflow-y-auto">
                                     {folders.map(folder => {
                                         const folderRoutines = filteredFoldersWithRoutines.get(folder.id);
                                         if (!folderRoutines || folderRoutines.length === 0) return null;
@@ -611,7 +618,7 @@ const AddWorkoutModal: React.FC<AddWorkoutModalProps> = ({ onClose, onSave, date
 
 interface WorkoutDetailModalProps {
     workout: WorkoutSession;
-    routine?: Routine;
+    routine?: Routine | { id: string, name: string, color: string, plannedExercises: any[], folderId: string | null };
     exercises: Exercise[];
     onClose: () => void;
     onStart: () => void;
@@ -629,7 +636,7 @@ const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({ workout, routin
 
     return (
          <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
-            <div className="bg-light-card dark:bg-dark-card rounded-lg p-6 w-11/12 max-w-sm text-light-text dark:text-dark-text max-h-[90vh] flex flex-col">
+            <div className="bg-light-card dark:bg-dark-card rounded-lg p-6 w-11/12 max-w-sm text-light-text dark:text-dark-text max-h-[90vh] flex flex-col shadow-2xl">
                 <div className="flex justify-between items-center mb-4 flex-shrink-0">
                     <h3 className="text-lg font-bold flex items-center">
                         <span className="h-4 w-4 rounded-full mr-3" style={{backgroundColor: routine.color}}></span>
@@ -646,7 +653,7 @@ const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({ workout, routin
                             <p>Duração: <span className="font-semibold text-light-text dark:text-dark-text">{durationString}</span></p>
                         )}
                     </div>
-                    {routine.notes && (
+                    {'notes' in routine && routine.notes && (
                         <div className="mb-4 bg-light-bg dark:bg-dark-bg p-3 rounded-md">
                             <p className="text-sm font-semibold mb-1 text-light-text dark:text-dark-text">Anotações da Rotina:</p>
                             <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary italic">"{routine.notes}"</p>
@@ -666,13 +673,33 @@ const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({ workout, routin
 
                         return (
                             <div key={`${exercise.id}-${idx}`} className="text-sm">
-                                <p className="font-semibold text-light-text dark:text-dark-text">{exercise.name}</p>
+                                <div className="flex flex-col">
+                                    <p className="font-semibold text-light-text dark:text-dark-text">{exercise.name}</p>
+                                    
+                                    {/* Modifiers Badges for Resisted Exercises */}
+                                    {exercise.category === ExerciseCategory.RESISTED && (
+                                        <div className="flex flex-wrap gap-1 mt-1 mb-1">
+                                            {exercise.isWeightDoubled && (
+                                                <span className="text-[10px] bg-pink-100 dark:bg-pink-900/40 text-pink-700 dark:text-pink-300 px-1.5 py-0.5 rounded font-bold uppercase tracking-tighter">Peso 2x</span>
+                                            )}
+                                            {exercise.isCounterweight && (
+                                                <span className="text-[10px] bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 px-1.5 py-0.5 rounded font-bold uppercase tracking-tighter">Contrapeso</span>
+                                            )}
+                                            {plannedEx.barbellWeight ? (
+                                                <span className="text-[10px] bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded font-bold uppercase tracking-tighter">Barra: +{plannedEx.barbellWeight}kg</span>
+                                            ) : exercise.includeBarbellWeight && (
+                                                <span className="text-[10px] bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded font-bold uppercase tracking-tighter">Barra incluída</span>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
                                 {plannedEx.notes && (
                                     <p className="text-xs pl-2 mt-1 text-light-text-secondary dark:text-dark-text-secondary italic">
                                         Anotação: {plannedEx.notes}
                                     </p>
                                 )}
-                                <div className="pl-2 mt-1 space-y-1 text-light-text-secondary dark:text-dark-text-secondary">
+                                <div className="pl-2 mt-1 space-y-1 text-light-text-secondary dark:text-dark-text-secondary border-l border-light-border dark:border-dark-border ml-1">
                                     {plannedEx.sets.map((set, index) => {
                                         const effortLabel = scaleOptions?.find(opt => opt.value === set.effort)?.label;
                                         
@@ -713,10 +740,10 @@ const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({ workout, routin
                                         return (
                                             <div key={index}>
                                                 <p className={set.completed ? 'line-through opacity-60' : ''}>
-                                                    Série {index + 1}: {setInfo || (isCompleted ? "Não registrado" : "Não planejado")}
+                                                    S{index + 1}: {setInfo || (isCompleted ? "Não registrado" : "Não planejado")}
                                                 </p>
                                                 {effortLabel && (
-                                                     <p className="text-xs pl-4 italic text-pink-500 dark:text-pink-400">
+                                                     <p className="text-[10px] pl-4 italic text-pink-500 dark:text-pink-400">
                                                         Esforço: {effortLabel}
                                                      </p>
                                                 )}
