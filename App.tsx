@@ -120,7 +120,8 @@ const App: React.FC = () => {
                         data = item.def;
                     }
                 }
-                item.setter(data);
+                // Fix: Cast setter to any to bypass strict union call checking in the loop
+                (item.setter as any)(data);
             }
             setIsLoaded(true);
         };

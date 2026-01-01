@@ -1,8 +1,7 @@
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp } from '../App';
 import { Routine, Folder, Exercise, ExerciseCategory, PlannedExercise, WorkoutSet, MeasurementType, Unit, PerceivedExertionScale } from '../types';
-import { FolderIcon, PlusIcon, PencilIcon, TrashIcon, XIcon, ChevronRightIcon, PlayIcon, CheckCircleIcon, CopyIcon, SearchIcon, InfoIcon, DumbbellIcon, GripVerticalIcon, ChevronDownIcon } from '../components/Icons';
+import { FolderIcon, PlusIcon, PencilIcon, TrashIcon, XIcon, ChevronRightIcon, PlayIcon, CheckCircleIcon, CopyIcon, SearchIcon, InfoIcon, DumbbellIcon, GripVerticalIcon, ChevronDownIcon, HeartPulseIcon, StretchIcon } from '../components/Icons';
 import { ROUTINE_COLORS, getScaleOptions } from '../constants';
 import ConfirmationModal from '../components/ConfirmationModal';
 import { formatSecondsToMMSS, parseTimeToSeconds, vibrate } from '../utils';
@@ -467,8 +466,20 @@ const RoutinesScreen = () => {
                 </div>
             </div>
             
-            {isRoutineModalOpen && <RoutineFormModal onClose={() => setIsRoutineModalOpen(false)} onSave={(data) => { if(editingRoutine) updateRoutine({ ...data, id: editingRoutine.id }); else addRoutine(data as Omit<Routine, 'id'>); setIsRoutineModalOpen(false); }} routineToEdit={editingRoutine} allExercises={exercises} allFolders={folders} />}
-            {isFolderModalOpen && <FolderFormModal onClose={() => setIsFolderModalOpen(false)} onSave={(data) => { if(editingFolder) updateFolder({ ...data, id: editingFolder.id, parentId: null }); else addFolder({ ...data, parentId: null }); setIsFolderModalOpen(false); }} folderToEdit={editingFolder} />}
+            {isRoutineModalOpen && (
+              <RoutineFormModal 
+                onClose={() => setIsRoutineModalOpen(false)} 
+                onSave={(data) => { 
+                  if(editingRoutine) updateRoutine({ ...data, id: editingRoutine.id } as Routine); 
+                  else addRoutine(data as Omit<Routine, 'id'>); 
+                  setIsRoutineModalOpen(false); 
+                }} 
+                routineToEdit={editingRoutine} 
+                allExercises={exercises} 
+                allFolders={folders} 
+              />
+            )}
+            {isFolderModalOpen && <FolderFormModal onClose={() => setIsFolderModalOpen(false)} onSave={(data) => { if(editingFolder) updateFolder({ ...data, id: editingFolder.id, parentId: null } as Folder); else addFolder({ ...data, parentId: null } as Omit<Folder, 'id'>); setIsFolderModalOpen(false); }} folderToEdit={editingFolder} />}
             {statsInfo && <RoutinesStatsModal title={statsInfo.title} analyzedRoutines={statsInfo.routines} exercises={exercises} evaluations={evaluations} onClose={() => setStatsInfo(null)} />}
             {confirmDeleteRoutineInfo && <ConfirmationModal isOpen={!!confirmDeleteRoutineInfo} onClose={() => setConfirmDeleteRoutineInfo(null)} onConfirm={handleConfirmDeleteRoutine} title="Confirmar Exclusão" message={<>Tem certeza que deseja apagar a rotina <strong>"{confirmDeleteRoutineInfo.name}"</strong>? Esta ação não pode ser desfeita.</>} />}
             {confirmDeleteFolderInfo && <ConfirmationModal isOpen={!!confirmDeleteFolderInfo} onClose={() => setConfirmDeleteFolderInfo(null)} onConfirm={handleConfirmDeleteFolder} title="Confirmar Exclusão" message={<><p>Tem certeza que deseja apagar a pasta <strong>"{confirmDeleteFolderInfo.name}"</strong>?</p><p className="mt-2 text-sm text-light-text-secondary dark:text-dark-text-secondary">As rotinas dentro dela não serão apagadas, mas movidas para fora da pasta.</p></>} />}
@@ -583,22 +594,52 @@ const RoutineFormModal = ({ onClose, onSave, routineToEdit, allExercises, allFol
     const [name, setName] = useState(routineToEdit?.name || '');
     const [color, setColor] = useState(routineToEdit?.color || ROUTINE_COLORS[0]);
     const [folderId, setFolderId] = useState<string | null>(routineToEdit?.folderId || null);
-    const [plannedExercises, setPlannedExercises] = useState<PlannedExercise[]>(routineToEdit?.plannedExercises || []);
+    
+    // We add a tempId to plannedExercises for stable rendering keys during form editing
+    const [plannedExercises, setPlannedExercises] = useState<(PlannedExercise & { internalId: string })[]>(() => {
+        if (routineToEdit?.plannedExercises) {
+            return routineToEdit.plannedExercises.map((pe, idx) => ({ ...pe, internalId: `pe-${Date.now()}-${idx}` }));
+        }
+        return [];
+    });
+    
     const [notes, setNotes] = useState(routineToEdit?.notes || '');
     const [isExercisePickerOpen, setIsExercisePickerOpen] = useState(false);
     const [infoExercise, setInfoExercise] = useState<Exercise | null>(null);
 
     const folderOptions = [{ value: 'none', label: 'Nenhuma Pasta' }, ...allFolders.map(f => ({ value: f.id, label: f.name }))];
 
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!name.trim()) return alert("O nome da rotina é obrigatório.");
-        if (plannedExercises.length === 0) return alert("Adicione ao menos um exercício à rotina.");
-        onSave({ name, color, folderId: folderId === 'none' ? null : folderId, plannedExercises, notes });
+    const handleSubmit = (e?: React.BaseSyntheticEvent) => {
+        if (e) e.preventDefault();
+        
+        if (!name.trim()) {
+            alert("O nome da rotina é obrigatório.");
+            return;
+        }
+        if (plannedExercises.length === 0) {
+            alert("Adicione ao menos um exercício à rotina.");
+            return;
+        }
+
+        // Remove the internalId used for rendering before saving
+        const cleanedPlannedExercises = plannedExercises.map(({ internalId, ...rest }) => rest);
+
+        onSave({ 
+            name, 
+            color, 
+            folderId: folderId === 'none' ? null : folderId, 
+            plannedExercises: cleanedPlannedExercises, 
+            notes: notes.trim() 
+        });
     };
 
     const handleAddPlannedExercise = (ex: Exercise) => {
-        setPlannedExercises([...plannedExercises, { exerciseId: ex.id, sets: [{}], notes: '' }]);
+        setPlannedExercises([...plannedExercises, { 
+            exerciseId: ex.id, 
+            sets: [{}], 
+            notes: '', 
+            internalId: `pe-${Date.now()}` 
+        }]);
         setIsExercisePickerOpen(false);
     };
 
@@ -617,13 +658,13 @@ const RoutineFormModal = ({ onClose, onSave, routineToEdit, allExercises, allFol
     };
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-            <div className="bg-light-card dark:bg-dark-card rounded-lg p-6 w-full max-w-4xl max-h-[95vh] flex flex-col shadow-2xl">
-                <div className="flex justify-between items-center mb-6">
-                    <h3 className="text-2xl font-bold">{routineToEdit ? 'Editar Rotina' : 'Nova Rotina'}</h3>
-                    <button onClick={onClose}><XIcon className="h-6 w-6" /></button>
+        <div className="fixed inset-0 bg-light-bg dark:bg-dark-bg flex flex-col z-50 overflow-hidden">
+            <div className="bg-light-card dark:bg-dark-card flex-grow flex flex-col h-full shadow-2xl">
+                <div className="flex justify-between items-center p-4 border-b border-light-border dark:border-dark-border safe-top-padding">
+                    <h3 className="text-xl font-bold">{routineToEdit ? 'Editar Rotina' : 'Nova Rotina'}</h3>
+                    <button onClick={onClose} className="p-1 rounded-full hover:bg-light-bg dark:hover:bg-dark-bg"><XIcon className="h-6 w-6" /></button>
                 </div>
-                <form onSubmit={handleSubmit} className="flex-grow overflow-y-auto space-y-6 pr-2">
+                <form onSubmit={handleSubmit} className="flex-grow overflow-y-auto p-4 space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-medium mb-1">Nome da Rotina</label>
@@ -654,7 +695,7 @@ const RoutineFormModal = ({ onClose, onSave, routineToEdit, allExercises, allFol
                             if (!ex) return null;
                             const scaleOptions = getScaleOptions(ex.perceivedExertionScale);
                             return (
-                                <div key={exIndex} className="bg-light-bg dark:bg-dark-bg p-4 rounded-lg space-y-4">
+                                <div key={pe.internalId} className="bg-light-bg dark:bg-dark-bg p-4 rounded-lg space-y-4">
                                     <div className="flex justify-between items-center">
                                         <div className="flex items-center gap-3">
                                             <span className="font-bold text-lg">{exIndex + 1}. {ex.name}</span>
@@ -662,39 +703,108 @@ const RoutineFormModal = ({ onClose, onSave, routineToEdit, allExercises, allFol
                                         </div>
                                         <button type="button" onClick={() => setPlannedExercises(plannedExercises.filter((_, i) => i !== exIndex))} className="text-red-500"><TrashIcon className="h-5 w-5" /></button>
                                     </div>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                        <input type="text" value={pe.notes || ''} onChange={e => handleUpdatePlannedExercise(exIndex, { notes: e.target.value })} placeholder="Anotações para este exercício..." className="bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-2 text-sm" />
-                                        {ex.includeBarbellWeight && <input type="number" value={pe.barbellWeight || ''} onChange={e => handleUpdatePlannedExercise(exIndex, { barbellWeight: Number(e.target.value) })} placeholder="Peso da Barra (kg)" className="bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-2 text-sm" />}
+                                    
+                                    <div className="space-y-2">
+                                        <input 
+                                            type="text" 
+                                            value={pe.notes || ''} 
+                                            onChange={e => handleUpdatePlannedExercise(exIndex, { notes: e.target.value })} 
+                                            placeholder="Anotações para este exercício..." 
+                                            className="w-full bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-2 text-sm" 
+                                        />
+                                        {(ex.includeBarbellWeight || ex.isCounterweight) && (
+                                            <div className="flex items-center gap-2">
+                                                <label className="text-xs font-bold whitespace-nowrap text-light-text-secondary dark:text-dark-text-secondary">
+                                                    {ex.isCounterweight ? 'Peso Contrapeso:' : 'Peso Barra:'}
+                                                </label>
+                                                <input 
+                                                    type="number" 
+                                                    inputMode="decimal"
+                                                    value={pe.barbellWeight || ''} 
+                                                    onChange={e => handleUpdatePlannedExercise(exIndex, { barbellWeight: Number(e.target.value) })} 
+                                                    placeholder="kg" 
+                                                    className="w-20 bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-1.5 text-sm" 
+                                                />
+                                            </div>
+                                        )}
                                     </div>
+
                                     <div className="space-y-2">
                                         {pe.sets.map((set, setIndex) => (
-                                            <div key={setIndex} className="flex flex-wrap items-center gap-2 bg-light-card dark:bg-dark-card p-2 rounded-md">
-                                                <span className="text-xs font-bold w-full sm:w-auto">Série {setIndex + 1}</span>
-                                                {ex.measurementType === MeasurementType.COUNT ? (
-                                                    <div className="flex items-center gap-1">
-                                                        <input type="number" value={set.repsMin || ''} onChange={e => handleUpdateSet(exIndex, setIndex, { repsMin: Number(e.target.value) })} placeholder="Mín" className="w-16 bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-1 text-center text-sm" />
-                                                        <span>-</span>
-                                                        <input type="number" value={set.repsMax || ''} onChange={e => handleUpdateSet(exIndex, setIndex, { repsMax: Number(e.target.value) })} placeholder="Máx" className="w-16 bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-1 text-center text-sm" />
-                                                        <span className="text-xs">reps</span>
+                                            <div key={setIndex} className="flex items-center gap-1 bg-light-card dark:bg-dark-card p-1.5 rounded-md overflow-x-auto no-scrollbar">
+                                                <span className="text-[10px] font-bold shrink-0 w-6">S{setIndex + 1}</span>
+                                                
+                                                <div className="flex items-center gap-0.5 shrink-0">
+                                                    {ex.measurementType === MeasurementType.COUNT ? (
+                                                        <div className="flex items-center gap-0.5">
+                                                            <input 
+                                                                type="number" 
+                                                                inputMode="numeric"
+                                                                value={set.repsMin || ''} 
+                                                                onChange={e => handleUpdateSet(exIndex, setIndex, { repsMin: Number(e.target.value) })} 
+                                                                placeholder="min" 
+                                                                className="w-10 bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-1 text-center text-xs" 
+                                                            />
+                                                            <span className="text-[10px]">-</span>
+                                                            <input 
+                                                                type="number" 
+                                                                inputMode="numeric"
+                                                                value={set.repsMax || ''} 
+                                                                onChange={e => handleUpdateSet(exIndex, setIndex, { repsMax: Number(e.target.value) })} 
+                                                                placeholder="max" 
+                                                                className="w-10 bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-1 text-center text-xs" 
+                                                            />
+                                                        </div>
+                                                    ) : (
+                                                        <TimeInput 
+                                                            id={`time-${exIndex}-${setIndex}`} 
+                                                            valueInSeconds={set.time} 
+                                                            onChangeInSeconds={s => handleUpdateSet(exIndex, setIndex, { time: s })} 
+                                                            placeholder="00:00" 
+                                                            className="w-14 bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-1 text-center text-xs" 
+                                                        />
+                                                    )}
+                                                </div>
+
+                                                {ex.unit !== Unit.NONE && (
+                                                    <div className="flex items-center gap-0.5 shrink-0 ml-1">
+                                                        <input 
+                                                            type="number" 
+                                                            inputMode="decimal"
+                                                            value={set.value || ''} 
+                                                            onChange={e => handleUpdateSet(exIndex, setIndex, { value: Number(e.target.value) })} 
+                                                            placeholder="val"
+                                                            className="w-12 bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-1 text-center text-xs" 
+                                                        />
+                                                        <span className="text-[10px] font-medium opacity-70">{ex.unit === Unit.KG ? 'kg' : ex.unit === Unit.SPEED ? 'kmh' : 'u'}</span>
                                                     </div>
-                                                ) : (
-                                                    <TimeInput id={`time-${exIndex}-${setIndex}`} valueInSeconds={set.time} onChangeInSeconds={s => handleUpdateSet(exIndex, setIndex, { time: s })} placeholder="00:00" className="w-20 bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-1 text-center text-sm" />
                                                 )}
-                                                {ex.unit !== Unit.NONE && <div className="flex items-center gap-1"><input type="number" value={set.value || ''} onChange={e => handleUpdateSet(exIndex, setIndex, { value: Number(e.target.value) })} className="w-16 bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-1 text-center text-sm" /><span className="text-xs">{ex.unit}</span></div>}
-                                                {scaleOptions && <div className="w-32 h-10"><EffortPicker options={scaleOptions} value={set.effort} onChange={v => handleUpdateSet(exIndex, setIndex, { effort: v })} placeholder="Esforço" /></div>}
-                                                <button type="button" onClick={() => { const ns = [...pe.sets]; ns.splice(setIndex, 1); handleUpdatePlannedExercise(exIndex, { sets: ns }); }} className="text-light-text-secondary hover:text-red-500 ml-auto"><XIcon className="h-4 w-4" /></button>
+
+                                                {scaleOptions && (
+                                                    <div className="w-20 h-8 shrink-0 ml-1">
+                                                        <EffortPicker options={scaleOptions} value={set.effort} onChange={v => handleUpdateSet(exIndex, setIndex, { effort: v })} placeholder="Esf." />
+                                                    </div>
+                                                )}
+
+                                                <button 
+                                                    type="button" 
+                                                    onClick={() => { const ns = [...pe.sets]; ns.splice(setIndex, 1); handleUpdatePlannedExercise(exIndex, { sets: ns }); }} 
+                                                    className="text-light-text-secondary hover:text-red-500 ml-auto p-1"
+                                                >
+                                                    <XIcon className="h-4 w-4" />
+                                                </button>
                                             </div>
                                         ))}
-                                        <button type="button" onClick={() => handleUpdatePlannedExercise(exIndex, { sets: [...pe.sets, {}] })} className="text-xs text-primary font-bold hover:underline">+ Adicionar Série</button>
+                                        <button type="button" onClick={() => handleUpdatePlannedExercise(exIndex, { sets: [...pe.sets, {}] })} className="text-[11px] text-primary font-bold hover:underline py-1 px-2">+ Adicionar Série</button>
                                     </div>
                                 </div>
                             );
                         })}
                     </div>
                 </form>
-                <div className="mt-6 flex justify-end gap-3 pt-4 border-t border-light-border dark:border-dark-border">
+                <div className="p-4 border-t border-light-border dark:border-dark-border flex justify-end gap-3 safe-bottom-padding bg-light-card dark:bg-dark-card">
                     <button type="button" onClick={onClose} className="bg-gray-200 dark:bg-gray-700 py-2 px-6 rounded-md font-bold">Cancelar</button>
-                    <button type="button" onClick={handleSubmit} className="bg-secondary text-white py-2 px-6 rounded-md font-bold">Salvar Rotina</button>
+                    <button type="button" onClick={() => handleSubmit()} className="bg-secondary text-white py-2 px-6 rounded-md font-bold">Salvar Rotina</button>
                 </div>
             </div>
             {isExercisePickerOpen && <ExercisePickerModal onClose={() => setIsExercisePickerOpen(false)} onSelect={handleAddPlannedExercise} allExercises={allExercises} />}
@@ -723,19 +833,109 @@ const FolderFormModal = ({ onClose, onSave, folderToEdit }: { onClose: () => voi
 
 const ExercisePickerModal = ({ onClose, onSelect, allExercises }: { onClose: () => void; onSelect: (ex: Exercise) => void; allExercises: Exercise[]; }) => {
     const [query, setQuery] = useState('');
-    const filtered = allExercises.filter(ex => ex.name.toLowerCase().includes(query.toLowerCase())).sort((a, b) => a.name.localeCompare(b.name));
+    const [categoryFilter, setCategoryFilter] = useState<ExerciseCategory | null>(null);
+
+    const filteredExercises = useMemo(() => {
+        const queryLower = query.toLowerCase().trim();
+        return allExercises.filter(ex => {
+            const searchMatch = !queryLower || ex.name.toLowerCase().includes(queryLower);
+            const categoryMatch = !categoryFilter || ex.category === categoryFilter;
+            return searchMatch && categoryMatch;
+        }).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+    }, [allExercises, query, categoryFilter]);
+
+    const exercisesByCategory = useMemo(() => {
+        return filteredExercises.reduce((acc, exercise) => {
+            if (!acc[exercise.category]) acc[exercise.category] = [];
+            acc[exercise.category].push(exercise);
+            return acc;
+        }, {} as Record<ExerciseCategory, Exercise[]>);
+    }, [filteredExercises]);
+
+    const categoryFilterOptions: { label: string; value: ExerciseCategory | null; icon: React.ReactNode }[] = [
+        { label: 'Todos', value: null, icon: null },
+        { label: 'Resistido', value: ExerciseCategory.RESISTED, icon: <DumbbellIcon className="h-4 w-4 mr-1" /> },
+        { label: 'Cardio', value: ExerciseCategory.CARDIO, icon: <HeartPulseIcon className="h-4 w-4 mr-1" /> },
+        { label: 'Flex', value: ExerciseCategory.FLEXIBILITY, icon: <StretchIcon className="h-4 w-4 mr-1" /> }
+    ];
+
     return (
         <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[60] p-4">
-            <div className="bg-light-card dark:bg-dark-card rounded-lg p-6 w-full max-w-md max-h-[80vh] flex flex-col shadow-2xl">
-                <div className="flex justify-between items-center mb-4"><h3 className="text-xl font-bold">Selecionar Exercício</h3><button onClick={onClose}><XIcon className="h-6 w-6" /></button></div>
-                <div className="relative mb-4"><SearchIcon className="h-5 w-5 absolute left-3 top-1/2 -translate-y-1/2 text-light-text-secondary" /><input type="text" value={query} onChange={e => setQuery(e.target.value)} placeholder="Pesquisar..." className="w-full bg-light-bg dark:bg-dark-border border border-light-border dark:border-dark-border rounded-md pl-10 pr-4 py-2" autoFocus /></div>
-                <div className="flex-grow overflow-y-auto space-y-2">
-                    {filtered.map(ex => (
-                        <button key={ex.id} onClick={() => onSelect(ex)} className="w-full text-left p-3 rounded-md flex items-center gap-3 hover:bg-light-bg dark:hover:bg-dark-bg transition-colors">
-                            <div className="w-10 h-10 bg-light-bg dark:bg-dark-bg rounded-md flex items-center justify-center">{ex.imageUrl ? <img src={ex.imageUrl} className="w-full h-full object-cover rounded-md" /> : <DumbbellIcon className="h-6 w-6 text-light-text-secondary" />}</div>
-                            <span className="font-medium">{ex.name}</span>
-                        </button>
-                    ))}
+            <div className="bg-light-card dark:bg-dark-card rounded-lg p-6 w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl">
+                <div className="flex justify-between items-center mb-4 flex-shrink-0">
+                    <h3 className="text-xl font-bold">Selecionar Exercício</h3>
+                    <button onClick={onClose} className="p-1 rounded-full hover:bg-light-bg dark:hover:bg-dark-bg transition-colors">
+                        <XIcon className="h-6 w-6 text-light-text-secondary dark:text-dark-text-secondary" />
+                    </button>
+                </div>
+
+                <div className="space-y-4 mb-4 flex-shrink-0">
+                    <div className="relative">
+                        <SearchIcon className="h-5 w-5 absolute left-3 top-1/2 -translate-y-1/2 text-light-text-secondary" />
+                        <input 
+                            type="text" 
+                            value={query} 
+                            onChange={e => setQuery(e.target.value)} 
+                            placeholder="Pesquisar..." 
+                            className="w-full bg-light-bg dark:bg-dark-border border border-light-border dark:border-dark-border rounded-md pl-10 pr-4 py-2 text-sm" 
+                            autoFocus 
+                        />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-1 bg-light-bg dark:bg-dark-bg p-1 rounded-lg">
+                        {categoryFilterOptions.map(option => (
+                            <button
+                                key={option.label}
+                                type="button"
+                                onClick={() => setCategoryFilter(option.value)}
+                                className={`flex items-center justify-center p-2 rounded-md text-xs font-bold transition-all ${
+                                    categoryFilter === option.value
+                                        ? 'bg-primary text-white shadow-md'
+                                        : 'text-light-text-secondary dark:text-dark-text-secondary hover:bg-light-card dark:hover:bg-dark-card'
+                                }`}
+                            >
+                                {option.icon}
+                                {option.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="flex-grow overflow-y-auto space-y-4 pr-1">
+                    {Object.keys(exercisesByCategory).length > 0 ? (
+                        (Object.entries(exercisesByCategory) as [string, Exercise[]][]).map(([category, items]) => (
+                            <div key={category}>
+                                <h4 className="text-[10px] font-black uppercase text-light-text-secondary dark:text-dark-text-secondary tracking-widest mb-2 sticky top-0 bg-light-card dark:bg-dark-card py-1 z-10">
+                                    {category}
+                                </h4>
+                                <div className="space-y-2">
+                                    {items.map(ex => (
+                                        <button 
+                                            key={ex.id} 
+                                            onClick={() => onSelect(ex)} 
+                                            className="w-full text-left p-2 rounded-md flex items-center gap-3 hover:bg-light-bg dark:hover:bg-dark-bg transition-colors border border-transparent hover:border-light-border dark:hover:border-dark-border"
+                                        >
+                                            <div className="w-10 h-10 bg-light-bg dark:bg-dark-bg rounded-md flex items-center justify-center flex-shrink-0">
+                                                {ex.imageUrl ? (
+                                                    <img src={ex.imageUrl} className="w-full h-full object-cover rounded-md" alt={ex.name} />
+                                                ) : (
+                                                    <DumbbellIcon className="h-6 w-6 text-light-text-secondary" />
+                                                )}
+                                            </div>
+                                            <div className="min-w-0">
+                                                <span className="font-semibold block truncate text-sm">{ex.name}</span>
+                                                <span className="text-[10px] text-light-text-secondary truncate block">{ex.primaryMuscles.join(', ')}</span>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        ))
+                    ) : (
+                        <div className="text-center py-10">
+                            <p className="text-sm text-light-text-secondary">Nenhum exercício encontrado.</p>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

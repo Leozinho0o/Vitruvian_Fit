@@ -1,4 +1,3 @@
-
 import React, { useMemo, useState, useEffect } from 'react';
 import { useApp } from '../App';
 import { WorkoutSession, Routine, ExerciseCategory, Unit, MeasurementType, Evaluation, Exercise } from '../types';
@@ -179,16 +178,6 @@ const StatsScreen: React.FC = () => {
             setSelectedReferences(newRefs);
         }
     }, [cardioExercisesInPeriod, availableTestsByExercise]);
-
-    // Identify cardio performance tests (5min and Incremental) for the period to show in a table
-    const cardioTestsInPeriod = useMemo(() => {
-        return filteredWorkouts.filter(w => {
-            if (w.routineId !== 'internal_test') return false;
-            const logEx = w.loggedExercises[0];
-            const ex = exercises.find(e => e.id === logEx?.exerciseId);
-            return ex?.category === ExerciseCategory.CARDIO;
-        });
-    }, [filteredWorkouts, exercises]);
 
     // Cardiovascular intensity distribution calculation
     const cardioIntensityDistributionData = useMemo<ChartData[]>(() => {
@@ -472,12 +461,14 @@ const StatsScreen: React.FC = () => {
         }));
     }, [filteredWorkouts, routines, exercises, startDate, endDate, evaluations]);
     
-    // --- Lógica de classificação de intensidade por 1RM ---
+    // --- Lógica de classificação de intensidade por 1RM Dinâmico ---
     const seriesByMuscleGroupData = useMemo<ChartData[]>(() => {
         const latestBodyMass = (evaluations && evaluations.length > 0) ? evaluations[0].measurements.bodyMass : undefined;
 
-        // 1. Calcular o maior 1RM estimado HISTÓRICO para cada exercício do app
-        const max1RMMap = new Map<string, number>();
+        // 1. Organizar TODOS os recordes históricos por exercício e data
+        // exerciseId -> Array<{ date: string, oneRM: number }>
+        const allOneRMRecords = new Map<string, { date: string, oneRM: number }[]>();
+        
         workouts.filter(w => w.completed).forEach(session => {
             session.loggedExercises.forEach(loggedEx => {
                 const exercise = exercises.find(e => e.id === loggedEx.exerciseId);
@@ -485,7 +476,7 @@ const StatsScreen: React.FC = () => {
 
                 loggedEx.sets.forEach(set => {
                     const effortValue = parseEffortToNumber(set.effort);
-                    // Usar apenas séries de alto esforço (>= 9) para estimar o 1RM real do indivíduo
+                    // Base para recordes: PSE/RIR >= 9
                     if (effortValue < 9) return;
 
                     const reps = set.reps ?? 0;
@@ -497,42 +488,51 @@ const StatsScreen: React.FC = () => {
                     
                     if (reps > 0 && load > 0) {
                         const estimated1RM = load * (1 + reps / 30);
-                        const currentMax = max1RMMap.get(exercise.id) || 0;
-                        if (estimated1RM > currentMax) max1RMMap.set(exercise.id, estimated1RM);
+                        if (!allOneRMRecords.has(exercise.id)) allOneRMRecords.set(exercise.id, []);
+                        allOneRMRecords.get(exercise.id)!.push({ date: session.date, oneRM: estimated1RM });
                     }
                 });
             });
         });
 
+        // Ordenar os recordes de cada exercício por data
+        allOneRMRecords.forEach(records => records.sort((a, b) => a.date.localeCompare(b.date)));
+
         // 2. Processar os treinos do PERÍODO FILTRADO
-        // Estrutura: muscle -> { category -> count }
         const intensityMap = new Map<string, Record<string, number>>();
         muscleGroups.forEach(muscle => {
             intensityMap.set(muscle, { 'Alta': 0, 'Moderada': 0, 'Leve': 0, 'Muito Leve': 0 });
         });
 
-        filteredWorkouts.forEach((w: WorkoutSession) => {
-            w.loggedExercises.forEach(loggedEx => {
+        filteredWorkouts.forEach((session: WorkoutSession) => {
+            const sessionDate = session.date;
+
+            session.loggedExercises.forEach(loggedEx => {
                 const exercise = exercises.find(e => e.id === loggedEx.exerciseId);
                 if (!exercise || exercise.category !== ExerciseCategory.RESISTED) return;
 
-                const max1RM = max1RMMap.get(exercise.id);
+                // Encontrar o MELHOR 1RM até a data deste treino (inclusive)
+                const exerciseRecords = allOneRMRecords.get(exercise.id) || [];
+                const max1RMAtThisPoint = exerciseRecords
+                    .filter(r => r.date <= sessionDate)
+                    .reduce((max, r) => Math.max(max, r.oneRM), 0);
+
                 const uniqueMuscles = new Set([...exercise.primaryMuscles, ...exercise.secondaryMuscles]);
 
                 loggedEx.sets.forEach(set => {
                     const effortValue = parseEffortToNumber(set.effort);
                     // Apenas séries efetivas (>= 7) ou testes de força
-                    if (effortValue < 7 && w.routineId !== 'internal_test') return;
+                    if (effortValue < 7 && session.routineId !== 'internal_test') return;
 
-                    let intensityCategory = 'Moderada'; // Default caso não haja 1RM estimado (considera moderado por ser esforço >= 7)
+                    let intensityCategory = 'Moderada'; // Fallback
 
-                    if (max1RM && max1RM > 0) {
+                    if (max1RMAtThisPoint > 0) {
                         const barbellWeight = loggedEx.barbellWeight ?? 0;
                         let currentLoad = (set.value ?? 0) + barbellWeight;
                         if (exercise.isWeightDoubled) currentLoad *= 2;
                         else if (exercise.isCounterweight && latestBodyMass && currentLoad > 0) currentLoad = Math.max(0, latestBodyMass - currentLoad);
 
-                        const percentage = (currentLoad / max1RM) * 100;
+                        const percentage = (currentLoad / max1RMAtThisPoint) * 100;
                         if (percentage >= 85) intensityCategory = 'Alta';
                         else if (percentage >= 60) intensityCategory = 'Moderada';
                         else if (percentage >= 30) intensityCategory = 'Leve';
@@ -549,12 +549,12 @@ const StatsScreen: React.FC = () => {
             });
         });
 
-        // 3. Converter para o formato ChartData[] com detalhes empilhados
+        // 3. Converter para o formato ChartData[]
         const intensityColors: Record<string, string> = {
-            'Alta': '#EF4444',       // Red
-            'Moderada': '#DB2777',   // Pink/Secondary
-            'Leve': '#F59E0B',       // Amber
-            'Muito Leve': '#3B82F6'  // Blue
+            'Alta': '#EF4444',
+            'Moderada': '#DB2777',
+            'Leve': '#F59E0B',
+            'Muito Leve': '#3B82F6'
         };
 
         return Array.from(intensityMap.entries())
@@ -787,35 +787,63 @@ const StatsScreen: React.FC = () => {
     }, [filteredWorkouts, routines, exercises, startDate, endDate]);
 
     const seriesByMuscleGroupFlexibilityData = useMemo<ChartData[]>(() => {
-        const dataByMuscle = new Map<string, number>();
+        // Estrutura: muscle -> { category -> count }
+        const intensityMap = new Map<string, Record<string, number>>();
         muscleGroups.forEach(muscle => {
-            dataByMuscle.set(muscle, 0);
+            intensityMap.set(muscle, { 'Alta': 0, 'Moderada': 0, 'Leve': 0, 'Muito Leve': 0 });
         });
 
         filteredWorkouts.forEach((w: WorkoutSession) => {
             w.loggedExercises.forEach(loggedEx => {
                 const exercise = exercises.find(e => e.id === loggedEx.exerciseId);
                 if (exercise && exercise.category === ExerciseCategory.FLEXIBILITY) {
-                    const numSets = loggedEx.sets.length;
-                    if (numSets > 0) {
-                        const uniqueMuscles = new Set([...exercise.primaryMuscles, ...exercise.secondaryMuscles]);
+                    const uniqueMuscles = new Set([...exercise.primaryMuscles, ...exercise.secondaryMuscles]);
+
+                    loggedEx.sets.forEach(set => {
+                        const effortValue = parseEffortToNumber(set.effort);
+                        let intensityCategory = 'Moderada';
+
+                        if (effortValue >= 7) intensityCategory = 'Alta';
+                        else if (effortValue >= 4) intensityCategory = 'Moderada';
+                        else if (effortValue >= 2) intensityCategory = 'Leve';
+                        else intensityCategory = 'Muito Leve';
+
                         uniqueMuscles.forEach(muscle => {
-                            if (dataByMuscle.has(muscle)) {
-                                dataByMuscle.set(muscle, dataByMuscle.get(muscle)! + numSets);
+                            if (intensityMap.has(muscle)) {
+                                const counts = intensityMap.get(muscle)!;
+                                counts[intensityCategory]++;
                             }
                         });
-                    }
+                    });
                 }
             });
         });
 
-        const chartData = Array.from(dataByMuscle.entries())
-            .map(([muscle, count]) => ({
-                label: muscle,
-                value: count,
-            }));
+        const intensityColors: Record<string, string> = {
+            'Alta': '#EF4444',
+            'Moderada': '#DB2777',
+            'Leve': '#F59E0B',
+            'Muito Leve': '#3B82F6'
+        };
 
-        return chartData;
+        return Array.from(intensityMap.entries())
+            .map(([muscle, counts]) => {
+                const total = Object.values(counts).reduce((a, b) => a + b, 0);
+                const details = Object.entries(counts)
+                    .filter(([, val]) => val > 0)
+                    .map(([name, value]) => ({
+                        name,
+                        value,
+                        color: intensityColors[name]
+                    }));
+
+                return {
+                    label: muscle,
+                    value: total,
+                    details
+                };
+            })
+            .filter(item => item.value > 0);
     }, [filteredWorkouts, exercises, muscleGroups]);
 
     return (
@@ -916,8 +944,8 @@ const StatsScreen: React.FC = () => {
                                     <BarChart data={dailyInternalLoadData} isStacked={true} unit="UA" />
                                 </div>
                                 <div>
-                                    <h3 className="text-lg font-semibold text-light-text dark:text-dark-text mb-1">Séries por Grupo Muscular (Intensidade por 1RM)</h3>
-                                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Soma das séries efetivas classificadas pela porcentagem da carga em relação ao seu 1RM histórico estimado.</p>
+                                    <h3 className="text-lg font-semibold text-light-text dark:text-dark-text mb-1">Séries por Grupo Muscular (Intensidade por 1RM Histórico)</h3>
+                                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Soma das séries efetivas classificadas pela carga em relação ao seu 1RM recorde na data de cada treino.</p>
                                     <HorizontalBarChart data={seriesByMuscleGroupData} unit="séries" />
                                 </div>
                             </div>
@@ -948,60 +976,6 @@ const StatsScreen: React.FC = () => {
                                     <h3 className="text-lg font-semibold text-light-text dark:text-dark-text mb-1">Carga Interna (UA)</h3>
                                     <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Cálculo: Soma de (tempo em min x (velocidade ou distância) x PSE) para todas as séries.</p>
                                     <BarChart data={dailyCardioInternalLoadData} isStacked={true} unit="UA" />
-                                </div>
-
-                                {/* Cardiovascular Performance Tests History */}
-                                <div className="border-t border-light-border dark:border-dark-border pt-8">
-                                    <div className="mb-4">
-                                        <h3 className="text-lg font-semibold text-light-text dark:text-dark-text flex items-center">
-                                            <CalendarIcon className="h-5 w-5 mr-2 text-primary" /> Histórico de Testes de Desempenho
-                                        </h3>
-                                        <p className="text-xs text-light-text-secondary dark:text-dark-text-secondary">Resultados dos testes de 5 minutos e incrementais realizados no período.</p>
-                                    </div>
-                                    
-                                    {cardioTestsInPeriod.length > 0 ? (
-                                        <div className="bg-light-bg dark:bg-dark-bg rounded-lg overflow-hidden border border-light-border dark:border-dark-border">
-                                            <table className="w-full text-sm text-left">
-                                                <thead className="text-xs uppercase bg-gray-100 dark:bg-gray-800 text-light-text-secondary dark:text-dark-text-secondary">
-                                                    <tr>
-                                                        <th className="px-4 py-2">Data</th>
-                                                        <th className="px-4 py-2">Exercício</th>
-                                                        <th className="px-4 py-2">Tipo</th>
-                                                        <th className="px-4 py-2 text-right">Resultado</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-light-border dark:divide-dark-border">
-                                                    {cardioTestsInPeriod.map(test => {
-                                                        const logEx = test.loggedExercises[0];
-                                                        const ex = exercises.find(e => e.id === logEx?.exerciseId);
-                                                        const is5min = logEx?.notes?.includes('5 minutos');
-                                                        const typeLabel = is5min ? '5 min' : 'Inc';
-                                                        const completedSets = logEx.sets.filter(s => s.completed);
-                                                        const resultValue = is5min ? (logEx.sets[0].value ?? '-') : (completedSets[completedSets.length - 1]?.value ?? '-');
-
-                                                        return (
-                                                            <tr key={test.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
-                                                                <td className="px-4 py-3 font-medium">{new Date(`${test.date}T00:00:00`).toLocaleDateString('pt-BR')}</td>
-                                                                <td className="px-4 py-3 truncate max-w-[120px]">{ex?.name || 'Desconhecido'}</td>
-                                                                <td className="px-4 py-3">
-                                                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${is5min ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'}`}>
-                                                                        {typeLabel}
-                                                                    </span>
-                                                                </td>
-                                                                <td className="px-4 py-3 text-right font-bold text-secondary">
-                                                                    {resultValue} <span className="text-[10px] font-normal opacity-70">{ex?.unit}</span>
-                                                                </td>
-                                                            </tr>
-                                                        );
-                                                    })}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    ) : (
-                                        <p className="text-sm text-light-text-secondary italic text-center py-4 border border-dashed border-light-border dark:border-dark-border rounded-lg">
-                                            Nenhum teste físico realizado no intervalo selecionado.
-                                        </p>
-                                    )}
                                 </div>
 
                                 {/* Cardiovascular Intensity Distribution Section */}
@@ -1040,7 +1014,7 @@ const StatsScreen: React.FC = () => {
                                     
                                     {cardioIntensityDistributionData.length > 0 ? (
                                         <div className="mt-6">
-                                            <HorizontalBarChart data={cardioIntensityDistributionData} unit="min" />
+                                            <HorizontalBarChart data={cardioIntensityDistributionData} unit="min" sortData={false} />
                                             <div className="mt-6 flex gap-4 text-[10px] text-light-text-secondary justify-center flex-wrap">
                                                 <div className="flex items-center"><span className="h-2 w-2 rounded-full mr-1" style={{backgroundColor: '#7F1D1D'}}></span> Supramáximo (&gt;100%)</div>
                                                 <div className="flex items-center"><span className="h-2 w-2 rounded-full mr-1" style={{backgroundColor: '#EF4444'}}></span> Máximo (100%)</div>
@@ -1083,8 +1057,8 @@ const StatsScreen: React.FC = () => {
                                     <BarChart data={dailyFlexibilityLoadData} isStacked={true} unit="UA" />
                                 </div>
                                 <div>
-                                    <h3 className="text-lg font-semibold text-light-text dark:text-dark-text mb-1">Séries por Grupo Muscular</h3>
-                                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Soma do número de séries de todos os exercícios de flexibilidade que trabalham cada grupo muscular.</p>
+                                    <h3 className="text-lg font-semibold text-light-text dark:text-dark-text mb-1">Séries por Grupo Muscular (Intensidade por PERFLEX)</h3>
+                                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Soma do número de séries classificadas pela intensidade do esforço (Escala PERFLEX).</p>
                                     <HorizontalBarChart data={seriesByMuscleGroupFlexibilityData} unit="séries" />
                                 </div>
                             </div>

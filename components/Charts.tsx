@@ -1,4 +1,3 @@
-
 import React, { useMemo, useState } from 'react';
 
 export interface ChartData {
@@ -86,7 +85,7 @@ export const BarChart: React.FC<{ data: ChartData[]; isStacked?: boolean; unit: 
     );
 };
 
-export const HorizontalBarChart: React.FC<{ data: ChartData[]; unit: string }> = ({ data, unit }) => {
+export const HorizontalBarChart: React.FC<{ data: ChartData[]; unit: string; sortData?: boolean }> = ({ data, unit, sortData = true }) => {
     if (!data || data.filter(item => item.value > 0).length === 0) {
         return (
             <div className="text-center text-light-text-secondary dark:text-dark-text-secondary mt-10 p-4 bg-light-bg dark:bg-dark-bg rounded-lg">
@@ -95,12 +94,19 @@ export const HorizontalBarChart: React.FC<{ data: ChartData[]; unit: string }> =
         );
     }
     
-    const sortedData = useMemo(() => [...data].filter(item => item.value > 0).sort((a, b) => b.value - a.value), [data]);
-    const maxValue = useMemo(() => Math.max(...sortedData.map(d => d.value), 1), [sortedData]);
+    const processedData = useMemo(() => {
+        let list = [...data].filter(item => item.value > 0);
+        if (sortData) {
+            list.sort((a, b) => b.value - a.value);
+        }
+        return list;
+    }, [data, sortData]);
+
+    const maxValue = useMemo(() => Math.max(...processedData.map(d => d.value), 1), [processedData]);
 
     return (
         <div className="mt-4 space-y-3 text-sm" aria-label={`Gráfico de barras horizontais de ${unit}`}>
-            {sortedData.map((item, index) => (
+            {processedData.map((item, index) => (
                 <div key={index} className="flex flex-col gap-y-1 group relative">
                     <div className="flex items-center gap-x-2">
                         <div className="w-2/5 text-right text-light-text dark:text-dark-text pr-2 font-medium break-words leading-tight" title={item.label}>

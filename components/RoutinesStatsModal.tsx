@@ -1,4 +1,3 @@
-
 import React, { useMemo, useState, useEffect } from 'react';
 import { Routine, Exercise, ExerciseCategory, Unit, MeasurementType, Evaluation, WorkoutSession } from '../types';
 import { useApp } from '../App';
@@ -137,7 +136,7 @@ const RoutinesStatsModal: React.FC<RoutinesStatsModalProps> = ({ title, analyzed
         let totalInternalLoadFlex = 0;
         
         const intensityMapResisted = new Map<string, Record<string, number>>();
-        const seriesByMuscleFlex = new Map<string, number>();
+        const intensityMapFlex = new Map<string, Record<string, number>>();
 
         const cardioZones = {
             'Supramáximo (>100%)': { time: 0, color: '#7F1D1D' },
@@ -150,7 +149,7 @@ const RoutinesStatsModal: React.FC<RoutinesStatsModalProps> = ({ title, analyzed
 
         muscleGroups.forEach(m => {
             intensityMapResisted.set(m, { 'Alta': 0, 'Moderada': 0, 'Leve': 0, 'Muito Leve': 0 });
-            seriesByMuscleFlex.set(m, 0);
+            intensityMapFlex.set(m, { 'Alta': 0, 'Moderada': 0, 'Leve': 0, 'Muito Leve': 0 });
         });
 
         const intensityColors: Record<string, string> = {
@@ -224,7 +223,16 @@ const RoutinesStatsModal: React.FC<RoutinesStatsModalProps> = ({ title, analyzed
                         const avgReps = getAverageReps(set);
                         const baseValue = exercise.measurementType === MeasurementType.TIME ? ((set.time ?? 0) / 60) : avgReps;
                         if (baseValue > 0) totalInternalLoadFlex += baseValue * effort;
-                        uniqueMuscles.forEach(m => seriesByMuscleFlex.set(m, (seriesByMuscleFlex.get(m) || 0) + 1));
+
+                        let intensityCategory = 'Moderada';
+                        if (effort >= 7) intensityCategory = 'Alta';
+                        else if (effort >= 4) intensityCategory = 'Moderada';
+                        else if (effort >= 2) intensityCategory = 'Leve';
+                        else intensityCategory = 'Muito Leve';
+
+                        uniqueMuscles.forEach(m => {
+                            if (intensityMapFlex.has(m)) intensityMapFlex.get(m)![intensityCategory]++;
+                        });
                     }
                 }
             }
@@ -238,13 +246,19 @@ const RoutinesStatsModal: React.FC<RoutinesStatsModalProps> = ({ title, analyzed
             })
             .filter(item => item.value > 0);
 
-        const flexibilityChartData: ChartData[] = Array.from(seriesByMuscleFlex.entries()).filter(([, value]) => value > 0).map(([label, value]) => ({ label, value }));
+        const flexibilityChartData: ChartData[] = Array.from(intensityMapFlex.entries())
+            .map(([muscle, counts]) => {
+                const total = Object.values(counts).reduce((a, b) => a + b, 0);
+                const details = Object.entries(counts).filter(([, val]) => val > 0).map(([name, value]) => ({ name, value, color: intensityColors[name] }));
+                return { label: muscle, value: total, details };
+            })
+            .filter(item => item.value > 0);
 
         const cardioChartData: ChartData[] = Object.entries(cardioZones).map(([label, data]) => ({
             label,
             value: Math.round(data.time / 60),
             details: [{ name: 'Duração', value: Math.round(data.time / 60), color: data.color }]
-        })).filter(item => item.value > 0);
+        }));
 
         return {
             totalVolume: Math.round(totalVolume),
@@ -391,9 +405,9 @@ const RoutinesStatsModal: React.FC<RoutinesStatsModalProps> = ({ title, analyzed
                                 <p className="text-xs text-light-text-secondary italic">Nenhum exercício cardiovascular planejado.</p>
                             )}
 
-                            {stats.cardioIntensityDistribution.length > 0 ? (
+                            {stats.cardioIntensityDistribution.some(i => i.value > 0) ? (
                                 <div className="mt-4">
-                                    <HorizontalBarChart data={stats.cardioIntensityDistribution} unit="min" />
+                                    <HorizontalBarChart data={stats.cardioIntensityDistribution} unit="min" sortData={false} />
                                     <div className="mt-6 flex gap-3 text-[9px] text-light-text-secondary justify-center flex-wrap">
                                         <div className="flex items-center"><span className="h-2 w-2 rounded-full mr-1" style={{backgroundColor: '#7F1D1D'}}></span> Supramáximo (&gt;100%)</div>
                                         <div className="flex items-center"><span className="h-2 w-2 rounded-full mr-1" style={{backgroundColor: '#EF4444'}}></span> Máximo (100%)</div>
@@ -418,7 +432,7 @@ const RoutinesStatsModal: React.FC<RoutinesStatsModalProps> = ({ title, analyzed
                             <StatCard title="Carga Interna Planejada" value={stats.totalInternalLoadFlex.toLocaleString('pt-BR')} unit="UA" />
                         </div>
                          <div>
-                            <h5 className="text-md font-semibold text-light-text dark:text-dark-text mb-1">Séries Planejadas por Grupo Muscular</h5>
+                            <h5 className="text-md font-semibold text-light-text dark:text-dark-text mb-1">Séries Planejadas por Grupo Muscular (Intensidade por PERFLEX)</h5>
                             <HorizontalBarChart data={stats.seriesByMuscleFlex} unit="séries" />
                         </div>
                     </section>

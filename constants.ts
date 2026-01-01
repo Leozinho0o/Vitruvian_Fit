@@ -1,5 +1,3 @@
-
-
 import { Exercise, ExerciseCategory, MeasurementType, Unit, Routine, Folder, PerceivedExertionScale } from './types';
 
 export const DEFAULT_MUSCLE_GROUPS: string[] = [
@@ -32,7 +30,7 @@ export const ROUTINE_COLORS: string[] = [
 export const INITIAL_EXERCISES: Exercise[] = [
   { id: 'ex1', name: 'Supino Reto', category: ExerciseCategory.RESISTED, primaryMuscles: ['Peitoral'], secondaryMuscles: ['Deltóide anterior', 'Tríceps'], measurementType: MeasurementType.COUNT, unit: Unit.KG, notes: 'Focar na contração do peitoral. Descer a barra até tocar o peito.', perceivedExertionScale: PerceivedExertionScale.RIR, includeBarbellWeight: true },
   { id: 'ex2', name: 'Agachamento Livre', category: ExerciseCategory.RESISTED, primaryMuscles: ['Quadríceps', 'Glúteos'], secondaryMuscles: ['Eretores da espinha', 'Isquitibiais'], measurementType: MeasurementType.COUNT, unit: Unit.KG, notes: 'Manter a coluna reta e descer até os 90 graus.', perceivedExertionScale: PerceivedExertionScale.RIR, includeBarbellWeight: true },
-  { id: 'ex3', name: 'Esteira', category: ExerciseCategory.CARDIO, primaryMuscles: ['Quadríceps', 'Panturrilha'], secondaryMuscles: ['Isquitibiais'], measurementType: MeasurementType.TIME, unit: Unit.SPEED, notes: 'Manter um ritmo constante.', perceivedExertionScale: PerceivedExertionScale.PSE },
+  { id: 'ex3', name: 'Esteira', category: ExerciseCategory.CARDIO, primaryMuscles: ['Quadríceps', 'Panturrilha'], secondaryMuscles: ['Isquitibiais'], measurementType: MeasurementType.TIME, unit: Unit.SPEED, notes: 'Manter um ritmo constante.', perceivedExertionScale: PerceivedExertionScale.PSE, imageUrl: 'https://i.pinimg.com/736x/ea/c2/62/eac26204632aac9a91a727c910bffd53.jpg' },
   { id: 'ex4', name: 'Alongamento de Isquiotibiais', category: ExerciseCategory.FLEXIBILITY, primaryMuscles: ['Isquitibiais'], secondaryMuscles: [], measurementType: MeasurementType.TIME, unit: Unit.NONE, notes: 'Segurar a posição por 30 segundos sem forçar demais.', perceivedExertionScale: PerceivedExertionScale.PERFLEX },
   { id: 'ex5', name: 'Pulley frente barra (pegada pronada)', category: ExerciseCategory.RESISTED, primaryMuscles: ['Latíssimo do dorso'], secondaryMuscles: ['Bíceps', 'Rombóides', 'Trapézio medial', 'Deltóide posterior'], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR, includeBarbellWeight: true },
   { id: 'ex6', name: 'Pulley frente barra (pegada supinada)', category: ExerciseCategory.RESISTED, primaryMuscles: ['Latíssimo do dorso', 'Bíceps'], secondaryMuscles: ['Rombóides', 'Trapézio medial'], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR, includeBarbellWeight: true },
@@ -42,8 +40,8 @@ export const INITIAL_EXERCISES: Exercise[] = [
   { id: 'ex10', name: 'Pulley frente máquina (pegada supinada)', category: ExerciseCategory.RESISTED, primaryMuscles: ['Latíssimo do dorso', 'Bíceps'], secondaryMuscles: ['Rombóides', 'Trapézio medial'], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR },
   { id: 'ex11', name: 'Barra fixa (pegada pronada)', category: ExerciseCategory.RESISTED, primaryMuscles: ['Latíssimo do dorso'], secondaryMuscles: ['Bíceps', 'Rombóides', 'Trapézio medial', 'Deltóide posterior'], measurementType: MeasurementType.COUNT, unit: Unit.NONE, perceivedExertionScale: PerceivedExertionScale.RIR },
   { id: 'ex12', name: 'Barra fixa (pegada supinada)', category: ExerciseCategory.RESISTED, primaryMuscles: ['Latíssimo do dorso', 'Bíceps'], secondaryMuscles: ['Rombóides', 'Trapézio medial'], measurementType: MeasurementType.COUNT, unit: Unit.NONE, perceivedExertionScale: PerceivedExertionScale.RIR },
-  { id: 'ex13', name: 'Barra fixa graviton (pegada pronada)', category: ExerciseCategory.RESISTED, primaryMuscles: ['Latíssimo do dorso'], secondaryMuscles: ['Bíceps', 'Rombóides', 'Trapézio medial', 'Deltóide posterior'], measurementType: MeasurementType.COUNT, unit: Unit.KG, notes: 'O valor em KG representa a assistência da máquina.', perceivedExertionScale: PerceivedExertionScale.RIR, isCounterweight: true },
-  { id: 'ex14', name: 'Barra fixa graviton (pegada supinada)', category: ExerciseCategory.RESISTED, primaryMuscles: ['Latíssimo do dorso', 'Bíceps'], secondaryMuscles: ['Rombóides', 'Trapézio medial'], measurementType: MeasurementType.COUNT, unit: Unit.KG, notes: 'O valor em KG representa a assistência da máquina.', perceivedExertionScale: PerceivedExertionScale.RIR, isCounterweight: true },
+  { id: 'ex13', name: 'Barra fixa graviton (pegada pronada)', category: ExerciseCategory.RESISTED, primaryMuscles: ['Latíssimo do dorso'], secondaryMuscles: ['Bíceps', 'Rombóides', 'Trapézio medial', 'Deltóide posterior'], measurementType: MeasurementType.COUNT, unit: Unit.KG, notes: 'O value em KG representa a assistência da máquina.', perceivedExertionScale: PerceivedExertionScale.RIR, isCounterweight: true },
+  { id: 'ex14', name: 'Barra fixa graviton (pegada supinada)', category: ExerciseCategory.RESISTED, primaryMuscles: ['Latíssimo do dorso', 'Bíceps'], secondaryMuscles: ['Rombóides', 'Trapézio medial'], measurementType: MeasurementType.COUNT, unit: Unit.KG, notes: 'O value em KG representa a assistência da máquina.', perceivedExertionScale: PerceivedExertionScale.RIR, isCounterweight: true },
   { id: 'ex15', name: 'Barra fixa com pesos (pegada pronada)', category: ExerciseCategory.RESISTED, primaryMuscles: ['Latíssimo do dorso'], secondaryMuscles: ['Bíceps', 'Rombóides', 'Trapézio medial', 'Deltóide posterior'], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR },
   { id: 'ex16', name: 'Barra fixa com pesos (pegada supinada)', category: ExerciseCategory.RESISTED, primaryMuscles: ['Latíssimo do dorso', 'Bíceps'], secondaryMuscles: ['Rombóides', 'Trapézio medial'], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR },
   { id: 'ex17', name: 'Remada curvada barra (pegada pronada)', category: ExerciseCategory.RESISTED, primaryMuscles: ['Latíssimo do dorso', 'Rombóides', 'Trapézio medial'], secondaryMuscles: ['Bíceps', 'Eretores da espinha', 'Deltóide posterior'], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR, includeBarbellWeight: true },
@@ -79,7 +77,7 @@ export const INITIAL_EXERCISES: Exercise[] = [
   { id: 'ex47', name: 'Supino Smith declinado', category: ExerciseCategory.RESISTED, primaryMuscles: ['Peitoral'], secondaryMuscles: ['Deltóide anterior', 'Tríceps'], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR, includeBarbellWeight: true },
   { id: 'ex48', name: 'Militar', category: ExerciseCategory.RESISTED, primaryMuscles: ['Deltóide anterior', 'Deltóide medial'], secondaryMuscles: ['Tríceps'], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR, includeBarbellWeight: true },
   { id: 'ex49', name: 'Peito na paralela', category: ExerciseCategory.RESISTED, primaryMuscles: ['Peitoral'], secondaryMuscles: ['Tríceps', 'Deltóide anterior'], measurementType: MeasurementType.COUNT, unit: Unit.NONE, perceivedExertionScale: PerceivedExertionScale.RIR },
-  { id: 'ex50', name: 'Peito na paralela do graviton', category: ExerciseCategory.RESISTED, primaryMuscles: ['Peitoral'], secondaryMuscles: ['Tríceps', 'Deltóide anterior'], measurementType: MeasurementType.COUNT, unit: Unit.KG, notes: 'O valor em KG representa a assistência da máquina.', perceivedExertionScale: PerceivedExertionScale.RIR, isCounterweight: true },
+  { id: 'ex50', name: 'Peito na paralela do graviton', category: ExerciseCategory.RESISTED, primaryMuscles: ['Peitoral'], secondaryMuscles: ['Tríceps', 'Deltóide anterior'], measurementType: MeasurementType.COUNT, unit: Unit.KG, notes: 'O value em KG representa a assistência da máquina.', perceivedExertionScale: PerceivedExertionScale.RIR, isCounterweight: true },
   { id: 'ex51', name: 'Peito na paralela com pesos', category: ExerciseCategory.RESISTED, primaryMuscles: ['Peitoral'], secondaryMuscles: ['Tríceps', 'Deltóide anterior'], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR },
   { id: 'ex52', name: 'Apoio', category: ExerciseCategory.RESISTED, primaryMuscles: ['Peitoral'], secondaryMuscles: ['Deltóide anterior', 'Tríceps'], measurementType: MeasurementType.COUNT, unit: Unit.NONE, perceivedExertionScale: PerceivedExertionScale.RIR },
   { id: 'ex53', name: 'Apoio diamante', category: ExerciseCategory.RESISTED, primaryMuscles: ['Tríceps', 'Peitoral'], secondaryMuscles: ['Deltóide anterior'], measurementType: MeasurementType.COUNT, unit: Unit.NONE, perceivedExertionScale: PerceivedExertionScale.RIR },
@@ -122,8 +120,8 @@ export const INITIAL_EXERCISES: Exercise[] = [
   { id: 'ex90', name: 'Pulley frente máquina unilateral (pegada supinada)', category: ExerciseCategory.RESISTED, primaryMuscles: ['Latíssimo do dorso', 'Bíceps'], secondaryMuscles: ['Rombóides', 'Trapézio medial', 'Oblíquos'], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR },
   { id: 'ex91', name: 'Pulley frente máquina alternado (pegada pronada)', category: ExerciseCategory.RESISTED, primaryMuscles: ['Latíssimo do dorso'], secondaryMuscles: ['Bíceps', 'Rombóides', 'Trapézio medial', 'Deltóide posterior', 'Oblíquos'], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR },
   { id: 'ex92', name: 'Pulley frente máquina alternado (pegada supinada)', category: ExerciseCategory.RESISTED, primaryMuscles: ['Latíssimo do dorso', 'Bíceps'], secondaryMuscles: ['Rombóides', 'Trapézio medial', 'Oblíquos'], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR },
-  { id: 'ex93', name: 'Barra fixa graviton unilateral (pegada pronada)', category: ExerciseCategory.RESISTED, primaryMuscles: ['Latíssimo do dorso'], secondaryMuscles: ['Bíceps', 'Rombóides', 'Trapézio medial', 'Deltóide posterior', 'Oblíquos'], measurementType: MeasurementType.COUNT, unit: Unit.KG, notes: 'O valor em KG representa a assistência da máquina.', perceivedExertionScale: PerceivedExertionScale.RIR, isCounterweight: true },
-  { id: 'ex94', name: 'Barra fixa graviton unilateral (pegada supinada)', category: ExerciseCategory.RESISTED, primaryMuscles: ['Latíssimo do dorso', 'Bíceps'], secondaryMuscles: ['Rombóides', 'Trapézio medial', 'Oblíquos'], measurementType: MeasurementType.COUNT, unit: Unit.KG, notes: 'O valor em KG representa a assistência da máquina.', perceivedExertionScale: PerceivedExertionScale.RIR, isCounterweight: true },
+  { id: 'ex93', name: 'Barra fixa graviton unilateral (pegada pronada)', category: ExerciseCategory.RESISTED, primaryMuscles: ['Latíssimo do dorso'], secondaryMuscles: ['Bíceps', 'Rombóides', 'Trapézio medial', 'Deltóide posterior', 'Oblíquos'], measurementType: MeasurementType.COUNT, unit: Unit.KG, notes: 'O value em KG representa a assistência da máquina.', perceivedExertionScale: PerceivedExertionScale.RIR, isCounterweight: true },
+  { id: 'ex94', name: 'Barra fixa graviton unilateral (pegada supinada)', category: ExerciseCategory.RESISTED, primaryMuscles: ['Latíssimo do dorso', 'Bíceps'], secondaryMuscles: ['Rombóides', 'Trapézio medial', 'Oblíquos'], measurementType: MeasurementType.COUNT, unit: Unit.KG, notes: 'O value em KG representa a assistência da máquina.', perceivedExertionScale: PerceivedExertionScale.RIR, isCounterweight: true },
   { id: 'ex95', name: 'Supino vertical na máquina unilateral', category: ExerciseCategory.RESISTED, primaryMuscles: ['Peitoral'], secondaryMuscles: ['Deltóide anterior', 'Tríceps', 'Oblíquos'], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR },
   { id: 'ex96', name: 'Supino vertical na máquina alternado', category: ExerciseCategory.RESISTED, primaryMuscles: ['Peitoral'], secondaryMuscles: ['Deltóide anterior', 'Tríceps', 'Oblíquos'], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR },
   { id: 'ex97', name: 'Supino inclinado na máquina unilateral', category: ExerciseCategory.RESISTED, primaryMuscles: ['Peitoral'], secondaryMuscles: ['Deltóide anterior', 'Tríceps', 'Oblíquos'], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR },
@@ -158,7 +156,7 @@ export const INITIAL_EXERCISES: Exercise[] = [
   { id: 'ex126', name: 'Desenvolvimento Arnold', category: ExerciseCategory.RESISTED, primaryMuscles: ['Deltóide anterior', 'Deltóide medial'], secondaryMuscles: ['Tríceps'], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR, isWeightDoubled: true },
   { id: 'ex127', name: 'Elevação frontal com halteres', category: ExerciseCategory.RESISTED, primaryMuscles: ['Deltóide anterior'], secondaryMuscles: ['Peitoral'], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR, isWeightDoubled: true },
   { id: 'ex128', name: 'Elevação frontal com halteres unilateral', category: ExerciseCategory.RESISTED, primaryMuscles: ['Deltóide anterior'], secondaryMuscles: ['Peitoral', 'Oblíquos'], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR, isWeightDoubled: true },
-  { id: 'ex129', name: 'Elevação frontal com halteres alternado', category: ExerciseCategory.RESISTED, primaryMuscles: ['Deltóide anterior'], secondaryMuscles: ['Peitoral', 'Oblíquos'], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR, isWeightDoubled: true },
+  { id: 'ex129', name: 'Elevação frontal com halteres alternado', category: ExerciseCategory.RESISTED, primaryMuscles: ['Deltó anterior'], secondaryMuscles: ['Peitoral', 'Oblíquos'], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR, isWeightDoubled: true },
   { id: 'ex130', name: 'Elevação frontal com halteres no banco inclinado', category: ExerciseCategory.RESISTED, primaryMuscles: ['Deltóide anterior'], secondaryMuscles: ['Peitoral'], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR, isWeightDoubled: true },
   { id: 'ex131', name: 'Elevação frontal com halteres unilateral no banco inclinado', category: ExerciseCategory.RESISTED, primaryMuscles: ['Deltóide anterior'], secondaryMuscles: ['Peitoral', 'Oblíquos'], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR, isWeightDoubled: true },
   { id: 'ex132', name: 'Elevação frontal com halteres alternado no banco inclinado', category: ExerciseCategory.RESISTED, primaryMuscles: ['Deltóide anterior'], secondaryMuscles: ['Peitoral', 'Oblíquos'], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR, isWeightDoubled: true },
@@ -209,7 +207,7 @@ export const INITIAL_EXERCISES: Exercise[] = [
   { id: 'ex177', name: 'Rosca inclinada com halteres alternada', category: ExerciseCategory.RESISTED, primaryMuscles: ['Bíceps'], secondaryMuscles: ['Antebraço', 'Deltóide anterior'], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR, isWeightDoubled: true },
   { id: 'ex178', name: 'Rosca inclinada com halteres unilateral', category: ExerciseCategory.RESISTED, primaryMuscles: ['Bíceps'], secondaryMuscles: ['Antebraço', 'Deltóide anterior'], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR, isWeightDoubled: true },
   { id: 'ex179', name: 'Tríceps na paralela', category: ExerciseCategory.RESISTED, primaryMuscles: ['Tríceps'], secondaryMuscles: ['Peitoral', 'Deltóide anterior'], measurementType: MeasurementType.COUNT, unit: Unit.NONE, perceivedExertionScale: PerceivedExertionScale.RIR },
-  { id: 'ex180', name: 'Tríceps na paralela do graviton', category: ExerciseCategory.RESISTED, primaryMuscles: ['Tríceps'], secondaryMuscles: ['Peitoral', 'Deltóide anterior'], measurementType: MeasurementType.COUNT, unit: Unit.KG, notes: 'O valor em KG representa a assistência da máquina.', perceivedExertionScale: PerceivedExertionScale.RIR, isCounterweight: true },
+  { id: 'ex180', name: 'Tríceps na paralela do graviton', category: ExerciseCategory.RESISTED, primaryMuscles: ['Tríceps'], secondaryMuscles: ['Peitoral', 'Deltóide anterior'], measurementType: MeasurementType.COUNT, unit: Unit.KG, notes: 'O value em KG representa a assistência da máquina.', perceivedExertionScale: PerceivedExertionScale.RIR, isCounterweight: true },
   { id: 'ex181', name: 'Tríceps frânces com halter bilateral', category: ExerciseCategory.RESISTED, primaryMuscles: ['Tríceps'], secondaryMuscles: [], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR, isWeightDoubled: true },
   { id: 'ex182', name: 'Tríceps francês com halter unilateral', category: ExerciseCategory.RESISTED, primaryMuscles: ['Tríceps'], secondaryMuscles: ['Oblíquos'], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR, isWeightDoubled: true },
   { id: 'ex183', name: 'Tríceps francês com halter alternado', category: ExerciseCategory.RESISTED, primaryMuscles: ['Tríceps'], secondaryMuscles: ['Oblíquos'], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR, isWeightDoubled: true },
@@ -264,10 +262,10 @@ export const INITIAL_EXERCISES: Exercise[] = [
   { id: 'ex232', name: 'Rotação de tronco na polia alta (cima-baixo)', category: ExerciseCategory.RESISTED, primaryMuscles: ['Oblíquos'], secondaryMuscles: ['Reto abdominal'], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR },
   { id: 'ex233', name: 'Rotação de tronco na polia baixo (baixo-cima)', category: ExerciseCategory.RESISTED, primaryMuscles: ['Oblíquos'], secondaryMuscles: ['Reto abdominal'], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR },
   { id: 'ex234', name: 'Rotação de tronco na polia média', category: ExerciseCategory.RESISTED, primaryMuscles: ['Oblíquos'], secondaryMuscles: ['Reto abdominal'], measurementType: MeasurementType.COUNT, unit: Unit.KG, perceivedExertionScale: PerceivedExertionScale.RIR },
-  { id: 'ex235', name: 'Bicicleta', category: ExerciseCategory.CARDIO, primaryMuscles: ['Quadríceps', 'Glúteos'], secondaryMuscles: ['Isquitibiais', 'Panturrilha'], measurementType: MeasurementType.TIME, unit: Unit.SPEED, perceivedExertionScale: PerceivedExertionScale.PSE },
-  { id: 'ex236', name: 'Elíptico', category: ExerciseCategory.CARDIO, primaryMuscles: ['Quadríceps', 'Glúteos'], secondaryMuscles: ['Isquitibiais', 'Peitoral', 'Latíssimo do dorso'], measurementType: MeasurementType.TIME, unit: Unit.NONE, perceivedExertionScale: PerceivedExertionScale.PSE },
-  { id: 'ex237', name: 'Remo seco', category: ExerciseCategory.CARDIO, primaryMuscles: ['Latíssimo do dorso', 'Quadríceps'], secondaryMuscles: ['Rombóides', 'Eretores da espinha', 'Glúteos', 'Isquitibiais', 'Bíceps'], measurementType: MeasurementType.TIME, unit: Unit.DISTANCE, perceivedExertionScale: PerceivedExertionScale.PSE },
-  { id: 'ex238', name: 'Escada', category: ExerciseCategory.CARDIO, primaryMuscles: ['Glúteos', 'Quadríceps'], secondaryMuscles: ['Panturrilha'], measurementType: MeasurementType.TIME, unit: Unit.NONE, perceivedExertionScale: PerceivedExertionScale.PSE },
+  { id: 'ex235', name: 'Bicicleta', category: ExerciseCategory.CARDIO, primaryMuscles: ['Quadríceps', 'Glúteos'], secondaryMuscles: ['Isquitibiais', 'Panturrilha'], measurementType: MeasurementType.TIME, unit: Unit.SPEED, perceivedExertionScale: PerceivedExertionScale.PSE, imageUrl: 'https://i.pinimg.com/originals/9c/5b/16/9c5b161a5d82ca159febba71e9cca091.gif' },
+  { id: 'ex236', name: 'Elíptico', category: ExerciseCategory.CARDIO, primaryMuscles: ['Quadríceps', 'Glúteos'], secondaryMuscles: ['Isquitibiais', 'Peitoral', 'Latíssimo do dorso'], measurementType: MeasurementType.TIME, unit: Unit.NONE, perceivedExertionScale: PerceivedExertionScale.PSE, imageUrl: 'https://fitnessprogramer.com/wp-content/uploads/2021/06/Elliptical-Machine.gif' },
+  { id: 'ex237', name: 'Remo seco', category: ExerciseCategory.CARDIO, primaryMuscles: ['Latíssimo do dorso', 'Quadríceps'], secondaryMuscles: ['Rombóides', 'Eretores da espinha', 'Glúteos', 'Isquitibiais', 'Bíceps'], measurementType: MeasurementType.TIME, unit: Unit.DISTANCE, perceivedExertionScale: PerceivedExertionScale.PSE, imageUrl: 'https://i.pinimg.com/1200x/56/e7/62/56e7627d230ac4ab70fee8cd83cbb1de.jpg' },
+  { id: 'ex238', name: 'Escada', category: ExerciseCategory.CARDIO, primaryMuscles: ['Glúteos', 'Quadríceps'], secondaryMuscles: ['Panturrilha'], measurementType: MeasurementType.TIME, unit: Unit.NONE, perceivedExertionScale: PerceivedExertionScale.PSE, imageUrl: 'https://www.hipertrofia.org/blog/wp-content/uploads/2024/09/walking-on-stepmill.gif' },
   { id: 'ex239', name: 'Espacate frontal no chão', category: ExerciseCategory.FLEXIBILITY, primaryMuscles: ['Isquitibiais', 'Quadríceps', 'Glúteos'], secondaryMuscles: ['Adutores'], measurementType: MeasurementType.TIME, unit: Unit.NONE, notes: 'Manter o quadril alinhado para a frente.', perceivedExertionScale: PerceivedExertionScale.PERFLEX },
   { id: 'ex240', name: 'Espacate lateral no chão', category: ExerciseCategory.FLEXIBILITY, primaryMuscles: ['Adutores', 'Isquitibiais'], secondaryMuscles: ['Glúteos'], measurementType: MeasurementType.TIME, unit: Unit.NONE, notes: 'Manter os joelhos e os pés apontados para cima.', perceivedExertionScale: PerceivedExertionScale.PERFLEX },
   { id: 'ex241', name: 'Extensão dos braços na parede', category: ExerciseCategory.FLEXIBILITY, primaryMuscles: ['Peitoral', 'Deltóide anterior'], secondaryMuscles: ['Bíceps'], measurementType: MeasurementType.TIME, unit: Unit.NONE, notes: 'Girar o tronco para longe da parede para intensificar.', perceivedExertionScale: PerceivedExertionScale.PERFLEX },
@@ -276,86 +274,72 @@ export const INITIAL_EXERCISES: Exercise[] = [
   { id: 'ex244', name: 'Extensão do tronco no chão', category: ExerciseCategory.FLEXIBILITY, primaryMuscles: ['Eretores da espinha', 'Reto abdominal'], secondaryMuscles: ['Oblíquos'], measurementType: MeasurementType.TIME, unit: Unit.NONE, notes: 'Também conhecido como postura da cobra. Manter o quadril no chão.', perceivedExertionScale: PerceivedExertionScale.PERFLEX }
 ];
 
+// --- Added missing exports ---
+
 export const INITIAL_FOLDERS: Folder[] = [
-    { id: 'f1', name: 'Treinos de Força', parentId: null },
+  { id: 'f1', name: 'Adaptação', parentId: null },
+  { id: 'f2', name: 'Hipertrofia', parentId: null }
 ];
 
 export const INITIAL_ROUTINES: Routine[] = [
-  { 
-    id: 'r1', 
-    name: 'Peito e Tríceps', 
-    color: '#3B82F6', 
+  {
+    id: 'r1',
+    name: 'Full Body A',
+    color: ROUTINE_COLORS[0],
+    folderId: 'f1',
     plannedExercises: [
-      { exerciseId: 'ex1', sets: [{ reps: 12, value: 50, effort: '8' }, { reps: 10, value: 55, effort: '8.5' }, { reps: 8, value: 60, effort: '9' }] }
-    ], 
-    folderId: 'f1', 
-    notes: 'Aquecer bem os ombros antes de começar.' 
-  },
-  { 
-    id: 'r2', 
-    name: 'Pernas e Glúteos', 
-    color: '#EC4899', 
-    plannedExercises: [
-      { exerciseId: 'ex2', sets: [{ reps: 15, value: 80 }, { reps: 12, value: 90 }, { reps: 10, value: 100 }] }
-    ], 
-    folderId: 'f1', 
-    notes: 'Foco na execução correta para evitar lesões no joelho.' 
-  },
-  { 
-    id: 'r3', 
-    name: 'Cardio Leve', 
-    color: '#22C55E', 
-    plannedExercises: [
-      { exerciseId: 'ex3', sets: [{ time: 1800, value: 10, effort: '3' }] }
-    ], 
-    folderId: null, 
-    notes: '' 
-  },
-];
-
-export const PERFLEX_SCALE = [
-    { value: '0-30', label: '0 - 30 Normalidade' },
-    { value: '31-60', label: '31 - 60 Forçamento' },
-    { value: '61-80', label: '61 - 80 Desconforto' },
-    { value: '81-90', label: '81 - 90 Dor suportável' },
-    { value: '91-110', label: '91 - 110 Dor forte' },
-];
-
-export const RIR_SCALE = [
-    { value: '10', label: '10: Não poderia fazer mais repetições ou aumentar o peso' },
-    { value: '9.5', label: '9.5: Não poderia fazer mais repetições, poderia aumentar o peso' },
-    { value: '9', label: '9: Poderia fazer mais uma repetição' },
-    { value: '8.5', label: '8.5: Definitivamente poderia fazer mais uma repetição, talvez duas' },
-    { value: '8', label: '8: Poderia fazer mais duas repetições' },
-    { value: '7.5', label: '7.5: Definitivamente poderia fazer mais duas repetições, talvez 3' },
-    { value: '7', label: '7: Poderia fazer mais 3 repetições' },
-    { value: '5-6', label: '5-6: Poderia fazer mais 4 ou 6 repetições' },
-    { value: '1-4', label: '1-4: Esforço muito baixo' },
-];
-
-export const PSE_SCALE = [
-    { value: '0', label: '0: Repouso' },
-    { value: '1', label: '1: Muito, muito fácil' },
-    { value: '2', label: '2: Fácil' },
-    { value: '3', label: '3: Moderado' },
-    { value: '4', label: '4: Um pouco difícil' },
-    { value: '5', label: '5: Difícil' },
-    { value: '6', label: '6' },
-    { value: '7', label: '7: Muito difícil' },
-    { value: '8', label: '8' },
-    { value: '9', label: '9' },
-    { value: '10', label: '10: Máximo' },
+      { exerciseId: 'ex1', sets: [{ repsMin: 10, repsMax: 12, effort: '8' }, { repsMin: 10, repsMax: 12, effort: '9' }] },
+      { exerciseId: 'ex2', sets: [{ repsMin: 10, repsMax: 12, effort: '8' }, { repsMin: 10, repsMax: 12, effort: '9' }] },
+    ]
+  }
 ];
 
 export const getScaleOptions = (scale?: PerceivedExertionScale) => {
-    switch (scale) {
-        case PerceivedExertionScale.PERFLEX:
-            return PERFLEX_SCALE;
-        case PerceivedExertionScale.RIR:
-            return RIR_SCALE;
-        case PerceivedExertionScale.PSE:
-            return PSE_SCALE;
-        default:
-            return null;
-    }
+  if (!scale) return null;
+  switch (scale) {
+    case PerceivedExertionScale.RIR:
+      return [
+        { value: '10', label: '10 - Esforço Máximo (0 RIR)' },
+        { value: '9.5', label: '9.5 - Quase Máximo' },
+        { value: '9', label: '9 - 1 Repetição em Reserva' },
+        { value: '8.5', label: '8.5 - 1 ou 2 Reps em Reserva' },
+        { value: '8', label: '8 - 2 Repetições em Reserva' },
+        { value: '7.5', label: '7.5 - 2 ou 3 Reps em Reserva' },
+        { value: '7', label: '7 - 3 Repetições em Reserva' },
+        { value: '6', label: '6 - 4 Repetições em Reserva' },
+        { value: '5', label: '5 - Aquecimento' },
+      ];
+    case PerceivedExertionScale.PSE:
+      return [
+        { value: '6', label: '6 - Nenhum esforço' },
+        { value: '7', label: '7 - Extremamente leve' },
+        { value: '8', label: '8' },
+        { value: '9', label: '9 - Muito leve' },
+        { value: '10', label: '10' },
+        { value: '11', label: '11 - Leve' },
+        { value: '12', label: '12' },
+        { value: '13', label: '13 - Um pouco cansativo' },
+        { value: '14', label: '14' },
+        { value: '15', label: '15 - Cansativo' },
+        { value: '16', label: '16' },
+        { value: '17', label: '17 - Muito cansativo' },
+        { value: '18', label: '18' },
+        { value: '19', label: '19 - Extremamente cansativo' },
+        { value: '20', label: '20 - Esforço máximo' },
+      ];
+    case PerceivedExertionScale.PERFLEX:
+      return [
+        { value: '0', label: '0 - Repouso' },
+        { value: '1', label: '1 - Muito Leve' },
+        { value: '2', label: '2 - Leve' },
+        { value: '3', label: '3 - Moderado' },
+        { value: '4', label: '4 - Intenso' },
+        { value: '5', label: '5 - Muito Intenso' },
+        { value: '6', label: '6 - Máximo' },
+        { value: '7', label: '7 - Desconforto/Dor' },
+        { value: '8', label: '8 - Limite' },
+      ];
+    default:
+      return null;
+  }
 };
