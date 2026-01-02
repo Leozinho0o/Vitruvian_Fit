@@ -63,6 +63,12 @@ const dbGet = async (key: string, defaultValue: any) => {
     });
 };
 
+// --- Helper for Median App Export ---
+// Converts a UTF-8 string to Base64 safely
+const utf8_to_b64 = (str: string) => {
+    return window.btoa(unescape(encodeURIComponent(str)));
+};
+
 const App: React.FC = () => {
     const [isLoaded, setIsLoaded] = useState(false);
     const [activeView, setActiveView] = useState<View>(View.ROUTINES);
@@ -456,16 +462,74 @@ const App: React.FC = () => {
 
     const exportData = useCallback(() => {
         const data = { version: '1.1', app: 'Vitruvian Fit', exportedAt: new Date().toISOString(), exercises, routines, folders, workouts, muscleGroups, evaluations };
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const jsonString = JSON.stringify(data, null, 2);
+        const fileName = `vitruvian_fit_backup_${new Date().toISOString().split('T')[0]}.json`;
+
+        // Check for Median (GoNative) app environment
+        if ((window as any).median) {
+            const base64 = utf8_to_b64(jsonString);
+            (window as any).median.share.shareFile({
+                base64: base64,
+                filename: fileName,
+                mimetype: 'application/json',
+                displayName: fileName
+            });
+            return;
+        }
+
+        // Web Fallback
+        const blob = new Blob([jsonString], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `vitruvian_fit_backup_${new Date().toISOString().split('T')[0]}.json`;
+        link.download = fileName;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
     }, [exercises, routines, folders, workouts, muscleGroups, evaluations]);
+
+    const exportExerciseList = useCallback(() => {
+        const resistedExercises = exercises.filter(ex => ex.category === ExerciseCategory.RESISTED);
+        let content = `LISTA DE EXERCÍCIOS RESISTIDOS - VITRUVIAN FIT\n`;
+        content += `Exportado em: ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}\n`;
+        content += `================================================================\n\n`;
+
+        resistedExercises.forEach((ex, index) => {
+            content += `${index + 1}. ${ex.name.toUpperCase()}\n`;
+            content += `   GRUPOS PRIMÁRIOS: ${ex.primaryMuscles.join(', ')}\n`;
+            content += `   GRUPOS SECUNDÁRIOS: ${ex.secondaryMuscles.length > 0 ? ex.secondaryMuscles.join(', ') : 'Nenhum'}\n`;
+            content += `   TIPO DE MEDIDA: ${ex.measurementType}\n`;
+            content += `   UNIDADE: ${ex.unit}\n`;
+            if (ex.notes) content += `   ANOTAÇÕES: ${ex.notes}\n`;
+            content += `----------------------------------------------------------------\n\n`;
+        });
+
+        const fileName = `exercicios_resistidos_vitruvian_fit.txt`;
+
+        // Check for Median (GoNative) app environment
+        if ((window as any).median) {
+            const base64 = utf8_to_b64(content);
+            (window as any).median.share.shareFile({
+                base64: base64,
+                filename: fileName,
+                mimetype: 'text/plain',
+                displayName: fileName
+            });
+            return;
+        }
+
+        // Web Fallback
+        const blob = new Blob([content], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }, [exercises]);
 
     const importData = useCallback((file: File) => {
         const reader = new FileReader();
@@ -491,8 +555,8 @@ const App: React.FC = () => {
     }, []);
 
     const contextValue = useMemo(() => ({
-        exercises, setExercises, routines, setRoutines, folders, setFolders, workouts, setWorkouts, muscleGroups, setMuscleGroups, evaluations, selectedEvaluationDate, setSelectedEvaluationDate, activeWorkoutSession, setActiveWorkoutSession, isWorkoutMinimized, setIsWorkoutMinimized, editingExercise, setEditingExercise, isMeasurementsScreenOpen, setIsMeasurementsScreenOpen, isMuscleGroupsScreenOpen, setIsMuscleGroupsScreenOpen, isPhysicalEvaluationScreenOpen, setIsPhysicalEvaluationScreenOpen, isPhysicalTestsScreenOpen, setIsPhysicalTestsScreenOpen, theme, setTheme, setInfoModalContent, addExercise, updateExercise, deleteExercise, duplicateExercise, addMuscleGroup, editMuscleGroup, deleteMuscleGroup, addRoutine, updateRoutine, deleteRoutine, duplicateRoutine, moveRoutineToFolder, reorderRoutines, addFolder, updateFolder, deleteFolder, reorderFolders, logWorkout, updateWorkout, deleteWorkout, saveEvaluation, deleteEvaluation, startWorkoutFromRoutine, startFiveMinTest, startIncrementalTest, startOneRMTest, exportData, importData
-    }), [exercises, routines, folders, workouts, muscleGroups, evaluations, activeWorkoutSession, isWorkoutMinimized, editingExercise, theme, isMeasurementsScreenOpen, isMuscleGroupsScreenOpen, isPhysicalEvaluationScreenOpen, isPhysicalTestsScreenOpen, selectedEvaluationDate, addExercise, updateExercise, deleteExercise, duplicateExercise, addMuscleGroup, editMuscleGroup, deleteMuscleGroup, addRoutine, updateRoutine, deleteRoutine, duplicateRoutine, moveRoutineToFolder, reorderRoutines, addFolder, updateFolder, deleteFolder, reorderFolders, logWorkout, updateWorkout, deleteWorkout, saveEvaluation, deleteEvaluation, startWorkoutFromRoutine, startFiveMinTest, startIncrementalTest, startOneRMTest, exportData, importData]);
+        exercises, setExercises, routines, setRoutines, folders, setFolders, workouts, setWorkouts, muscleGroups, setMuscleGroups, evaluations, selectedEvaluationDate, setSelectedEvaluationDate, activeWorkoutSession, setActiveWorkoutSession, isWorkoutMinimized, setIsWorkoutMinimized, editingExercise, setEditingExercise, isMeasurementsScreenOpen, setIsMeasurementsScreenOpen, isMuscleGroupsScreenOpen, setIsMuscleGroupsScreenOpen, isPhysicalEvaluationScreenOpen, setIsPhysicalEvaluationScreenOpen, isPhysicalTestsScreenOpen, setIsPhysicalTestsScreenOpen, theme, setTheme, setInfoModalContent, addExercise, updateExercise, deleteExercise, duplicateExercise, addMuscleGroup, editMuscleGroup, deleteMuscleGroup, addRoutine, updateRoutine, deleteRoutine, duplicateRoutine, moveRoutineToFolder, reorderRoutines, addFolder, updateFolder, deleteFolder, reorderFolders, logWorkout, updateWorkout, deleteWorkout, saveEvaluation, deleteEvaluation, startWorkoutFromRoutine, startFiveMinTest, startIncrementalTest, startOneRMTest, exportData, importData, exportExerciseList
+    }), [exercises, routines, folders, workouts, muscleGroups, evaluations, activeWorkoutSession, isWorkoutMinimized, editingExercise, theme, isMeasurementsScreenOpen, isMuscleGroupsScreenOpen, isPhysicalEvaluationScreenOpen, isPhysicalTestsScreenOpen, selectedEvaluationDate, addExercise, updateExercise, deleteExercise, duplicateExercise, addMuscleGroup, editMuscleGroup, deleteMuscleGroup, addRoutine, updateRoutine, deleteRoutine, duplicateRoutine, moveRoutineToFolder, reorderRoutines, addFolder, updateFolder, deleteFolder, reorderFolders, logWorkout, updateWorkout, deleteWorkout, saveEvaluation, deleteEvaluation, startWorkoutFromRoutine, startFiveMinTest, startIncrementalTest, startOneRMTest, exportData, importData, exportExerciseList]);
 
     if (!isLoaded) {
         return (

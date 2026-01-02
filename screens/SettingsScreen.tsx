@@ -2,7 +2,7 @@
 import React, { useRef } from 'react';
 import { useApp } from '../App';
 import { Theme } from '../types';
-import { SunIcon, MoonIcon, MonitorIcon, ChevronRightIcon, ClipboardListIcon, DumbbellIcon, BarChartIcon, DownloadIcon, UploadIcon } from '../components/Icons';
+import { SunIcon, MoonIcon, MonitorIcon, ChevronRightIcon, ClipboardListIcon, DumbbellIcon, BarChartIcon, DownloadIcon, UploadIcon, FileTextIcon } from '../components/Icons';
 
 const SettingsScreen: React.FC = () => {
     const { 
@@ -12,7 +12,8 @@ const SettingsScreen: React.FC = () => {
         setIsMuscleGroupsScreenOpen,
         setIsPhysicalTestsScreenOpen,
         exportData,
-        importData
+        importData,
+        exportExerciseList
     } = useApp();
 
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -98,7 +99,7 @@ const SettingsScreen: React.FC = () => {
 
             {/* Backup Section */}
             <section className="space-y-4">
-                <h2 className="text-xl font-bold text-light-text dark:text-dark-text">Dados e Backup</h2>
+                <h2 className="text-xl font-bold text-light-text dark:text-dark-text">Dados e Relatórios</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <button
                         onClick={exportData}
@@ -114,6 +115,13 @@ const SettingsScreen: React.FC = () => {
                         <UploadIcon className="h-5 w-5 mr-3" />
                         Importar Backup
                     </button>
+                    <button
+                        onClick={exportExerciseList}
+                        className="flex items-center justify-center p-4 bg-gray-600 hover:bg-gray-700 text-white rounded-lg shadow-sm font-bold transition-colors col-span-1 sm:col-span-2"
+                    >
+                        <FileTextIcon className="h-5 w-5 mr-3" />
+                        Exportar Lista de Exercícios (.txt)
+                    </button>
                     <input 
                         type="file" 
                         ref={fileInputRef} 
@@ -123,7 +131,7 @@ const SettingsScreen: React.FC = () => {
                     />
                 </div>
                 <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary italic">
-                    O backup exporta todos os seus exercícios, rotinas, histórico de treinos e avaliações em um arquivo .json. Você pode guardar este arquivo para restaurar seus dados em outro dispositivo.
+                    O backup exporta todos os seus dados em um arquivo .json. A lista de exercícios exporta um documento de texto com detalhes dos exercícios resistidos.
                 </p>
             </section>
         </div>

@@ -388,7 +388,6 @@ const StatsScreen: React.FC = () => {
         const dataByDate = new Map<string, { totalLoad: number; details: { name: string; value: number; color: string }[] }>();
         const start = new Date(`${startDate}T00:00:00`);
         const end = new Date(`${endDate}T23:59:59`);
-        const latestBodyMass = (evaluations && evaluations.length > 0) ? evaluations[0].measurements.bodyMass : undefined;
     
         // Initialize all days in the range
         let currentDate = new Date(start);
@@ -424,21 +423,8 @@ const StatsScreen: React.FC = () => {
                 if (exercise && exercise.category === ExerciseCategory.RESISTED) {
                     loggedEx.sets.forEach(set => {
                         const effortValue = parseEffortToNumber(set.effort);
-                        if (effortValue >= 7) {
-                            const reps = set.reps ?? 0;
-                            const setValue = (set.value ?? 0) + (loggedEx.barbellWeight ?? 0);
-                            let calculatedLoad;
-
-                            if (exercise.isCounterweight && latestBodyMass && setValue > 0) {
-                                calculatedLoad = Math.max(0, latestBodyMass - setValue);
-                            } else {
-                                calculatedLoad = exercise.isWeightDoubled ? (setValue * 2) : setValue;
-                            }
-                            
-                            if (reps > 0 && calculatedLoad > 0) {
-                                const weightedLoad = reps * calculatedLoad * effortValue;
-                                routineInternalLoad += weightedLoad;
-                            }
+                        if (effortValue > 0) {
+                            routineInternalLoad += effortValue;
                         }
                     });
                 }
@@ -456,10 +442,10 @@ const StatsScreen: React.FC = () => {
     
         return Array.from(dataByDate.entries()).map(([date, data]) => ({
             label: new Date(`${date}T00:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
-            value: parseFloat(data.totalLoad.toFixed(2)),
-            details: data.details.map(d => ({ ...d, value: parseFloat(d.value.toFixed(2)) })),
+            value: parseFloat(data.totalLoad.toFixed(1)),
+            details: data.details.map(d => ({ ...d, value: parseFloat(d.value.toFixed(1)) })),
         }));
-    }, [filteredWorkouts, routines, exercises, startDate, endDate, evaluations]);
+    }, [filteredWorkouts, routines, exercises, startDate, endDate]);
     
     // --- Lógica de classificação de intensidade por 1RM Dinâmico ---
     const seriesByMuscleGroupData = useMemo<ChartData[]>(() => {
@@ -639,8 +625,8 @@ const StatsScreen: React.FC = () => {
     
         return Array.from(dataByDate.entries()).map(([date, data]) => ({
             label: new Date(`${date}T00:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
-            value: parseFloat(data.totalLoad.toFixed(2)),
-            details: data.details.map(d => ({ ...d, value: parseFloat(d.value.toFixed(2)) })),
+            value: parseFloat(data.totalLoad.toFixed(1)),
+            details: data.details.map(d => ({ ...d, value: parseFloat(d.value.toFixed(1)) })),
         }));
     }, [filteredWorkouts, routines, exercises, startDate, endDate]);
 
@@ -684,12 +670,9 @@ const StatsScreen: React.FC = () => {
                 const exercise = exercises.find(e => e.id === loggedEx.exerciseId);
                 if (exercise && exercise.category === ExerciseCategory.CARDIO) {
                     loggedEx.sets.forEach(set => {
-                        const timeInSeconds = set.time ?? 0;
-                        const timeInMinutes = timeInSeconds / 60;
                         const effortValue = parseEffortToNumber(set.effort);
-                        const value = set.value ?? 0; // Speed or distance
-                        if (timeInMinutes > 0 && effortValue > 0) {
-                            routineCardioInternalLoad += timeInMinutes * value * effortValue;
+                        if (effortValue > 0) {
+                            routineCardioInternalLoad += effortValue;
                         }
                     });
                 }
@@ -707,8 +690,8 @@ const StatsScreen: React.FC = () => {
     
         return Array.from(dataByDate.entries()).map(([date, data]) => ({
             label: new Date(`${date}T00:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
-            value: parseFloat(data.totalLoad.toFixed(2)),
-            details: data.details.map(d => ({ ...d, value: parseFloat(d.value.toFixed(2)) })),
+            value: parseFloat(data.totalLoad.toFixed(1)),
+            details: data.details.map(d => ({ ...d, value: parseFloat(d.value.toFixed(1)) })),
         }));
     }, [filteredWorkouts, routines, exercises, startDate, endDate]);
 
@@ -753,17 +736,8 @@ const StatsScreen: React.FC = () => {
                 if (exercise && exercise.category === ExerciseCategory.FLEXIBILITY) {
                     loggedEx.sets.forEach(set => {
                         const effortValue = parseEffortToNumber(set.effort);
-                        let baseValue = 0;
-
-                        if (exercise.measurementType === MeasurementType.TIME) {
-                            const timeInSeconds = set.time ?? 0;
-                            baseValue = timeInSeconds / 60; // Time in minutes
-                        } else { // MeasurementType.COUNT
-                            baseValue = set.reps ?? 0;
-                        }
-
-                        if (baseValue > 0 && effortValue > 0) {
-                            routineFlexibilityLoad += baseValue * effortValue;
+                        if (effortValue > 0) {
+                            routineFlexibilityLoad += effortValue;
                         }
                     });
                 }
@@ -781,8 +755,8 @@ const StatsScreen: React.FC = () => {
     
         return Array.from(dataByDate.entries()).map(([date, data]) => ({
             label: new Date(`${date}T00:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
-            value: parseFloat(data.totalLoad.toFixed(2)),
-            details: data.details.map(d => ({ ...d, value: parseFloat(d.value.toFixed(2)) })),
+            value: parseFloat(data.totalLoad.toFixed(1)),
+            details: data.details.map(d => ({ ...d, value: parseFloat(d.value.toFixed(1)) })),
         }));
     }, [filteredWorkouts, routines, exercises, startDate, endDate]);
 
@@ -933,6 +907,11 @@ const StatsScreen: React.FC = () => {
                     {isResistidoExpanded && (
                         <div id="resistido-stats-content" className="mt-4">
                             <div className="pt-4 space-y-12">
+                                <div>
+                                    <h3 className="text-lg font-semibold text-light-text dark:text-dark-text mb-1">Séries por Grupo Muscular (Intensidade por 1RM Histórico)</h3>
+                                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Soma das séries efetivas classificadas pela carga em relação ao seu 1RM recorde na data de cada treino.</p>
+                                    <HorizontalBarChart data={seriesByMuscleGroupData} unit="séries" />
+                                </div>
                                 <div className="pl-8">
                                     <h3 className="text-lg font-semibold text-light-text dark:text-dark-text mb-1">Carga Externa (Kg)</h3>
                                     <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Cálculo: Soma de (repetições x carga) para todas as séries.</p>
@@ -940,13 +919,8 @@ const StatsScreen: React.FC = () => {
                                 </div>
                                 <div className="pl-8">
                                     <h3 className="text-lg font-semibold text-light-text dark:text-dark-text mb-1">Carga Interna (UA)</h3>
-                                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Cálculo: Soma de (repetições x carga x esforço) para todas as séries com esforço &ge; 7.</p>
+                                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Cálculo: Soma da percepção subjetiva de esforço (PSE/RIR) de cada série realizada.</p>
                                     <BarChart data={dailyInternalLoadData} isStacked={true} unit="UA" />
-                                </div>
-                                <div>
-                                    <h3 className="text-lg font-semibold text-light-text dark:text-dark-text mb-1">Séries por Grupo Muscular (Intensidade por 1RM Histórico)</h3>
-                                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Soma das séries efetivas classificadas pela carga em relação ao seu 1RM recorde na data de cada treino.</p>
-                                    <HorizontalBarChart data={seriesByMuscleGroupData} unit="séries" />
                                 </div>
                             </div>
                         </div>
@@ -967,19 +941,8 @@ const StatsScreen: React.FC = () => {
                     {isCardioExpanded && (
                         <div id="cardio-stats-content" className="mt-4">
                             <div className="pt-4 space-y-12">
-                                <div className="pl-8">
-                                    <h3 className="text-lg font-semibold text-light-text dark:text-dark-text mb-1">Carga Externa</h3>
-                                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Cálculo: Soma de (tempo em min x (velocidade ou distância)) para todas as séries.</p>
-                                    <BarChart data={dailyCardioLoadData} isStacked={true} unit="UA" />
-                                </div>
-                                <div className="pl-8">
-                                    <h3 className="text-lg font-semibold text-light-text dark:text-dark-text mb-1">Carga Interna (UA)</h3>
-                                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Cálculo: Soma de (tempo em min x (velocidade ou distância) x PSE) para todas as séries.</p>
-                                    <BarChart data={dailyCardioInternalLoadData} isStacked={true} unit="UA" />
-                                </div>
-
-                                {/* Cardiovascular Intensity Distribution Section */}
-                                <div className="border-t border-light-border dark:border-dark-border pt-8">
+                                {/* Cardiovascular Intensity Distribution Section moved to top */}
+                                <div className="border-b border-light-border dark:border-dark-border pb-8">
                                     <div className="mb-6">
                                         <h3 className="text-lg font-semibold text-light-text dark:text-dark-text">Distribuição de Intensidade (Zonas)</h3>
                                         <p className="text-xs text-light-text-secondary dark:text-dark-text-secondary">Tempo agregado em cada zona metabólica. Selecione um teste de referência para cada exercício.</p>
@@ -1033,6 +996,17 @@ const StatsScreen: React.FC = () => {
                                         )
                                     )}
                                 </div>
+
+                                <div className="pl-8">
+                                    <h3 className="text-lg font-semibold text-light-text dark:text-dark-text mb-1">Carga Externa</h3>
+                                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Cálculo: Soma de (tempo em min x (velocidade ou distância)) para todas as séries.</p>
+                                    <BarChart data={dailyCardioLoadData} isStacked={true} unit="UA" />
+                                </div>
+                                <div className="pl-8">
+                                    <h3 className="text-lg font-semibold text-light-text dark:text-dark-text mb-1">Carga Interna (UA)</h3>
+                                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Cálculo: Soma da percepção subjetiva de esforço (PSE) de cada série realizada.</p>
+                                    <BarChart data={dailyCardioInternalLoadData} isStacked={true} unit="UA" />
+                                </div>
                             </div>
                         </div>
                     )}
@@ -1051,15 +1025,15 @@ const StatsScreen: React.FC = () => {
                     {isFlexibilidadeExpanded && (
                         <div id="flexibilidade-stats-content" className="mt-4">
                             <div className="pt-4 space-y-12">
-                                <div className="pl-8">
-                                    <h3 className="text-lg font-semibold text-light-text dark:text-dark-text mb-1">Carga Interna</h3>
-                                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Cálculo: Soma de ((tempo em min ou repetições) x esforço) para todas as séries.</p>
-                                    <BarChart data={dailyFlexibilityLoadData} isStacked={true} unit="UA" />
-                                </div>
                                 <div>
                                     <h3 className="text-lg font-semibold text-light-text dark:text-dark-text mb-1">Séries por Grupo Muscular (Intensidade por PERFLEX)</h3>
                                     <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Soma do número de séries classificadas pela intensidade do esforço (Escala PERFLEX).</p>
                                     <HorizontalBarChart data={seriesByMuscleGroupFlexibilityData} unit="séries" />
+                                </div>
+                                <div className="pl-8">
+                                    <h3 className="text-lg font-semibold text-light-text dark:text-dark-text mb-1">Carga Interna</h3>
+                                    <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Cálculo: Soma da percepção subjetiva de esforço (PERFLEX) de cada série realizada.</p>
+                                    <BarChart data={dailyFlexibilityLoadData} isStacked={true} unit="UA" />
                                 </div>
                             </div>
                         </div>

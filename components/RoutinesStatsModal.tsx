@@ -172,6 +172,11 @@ const RoutinesStatsModal: React.FC<RoutinesStatsModalProps> = ({ title, analyzed
                     const effort = parseEffortToNumber(set.effort);
                     
                     if (exercise.category === ExerciseCategory.RESISTED) {
+                        // Carga Interna soma o esforço se houver esforço definido
+                        if (effort > 0) {
+                            totalInternalLoadResisted += effort;
+                        }
+
                         if (effort >= 7) {
                             const avgReps = getAverageReps(set);
                             if (exercise.unit === Unit.KG) {
@@ -182,7 +187,6 @@ const RoutinesStatsModal: React.FC<RoutinesStatsModalProps> = ({ title, analyzed
                                 
                                 if (avgReps > 0 && calculatedLoad > 0) {
                                     totalVolume += avgReps * calculatedLoad;
-                                    totalInternalLoadResisted += avgReps * calculatedLoad * effort;
                                 }
 
                                 let intensityCategory = 'Moderada';
@@ -203,8 +207,12 @@ const RoutinesStatsModal: React.FC<RoutinesStatsModalProps> = ({ title, analyzed
                         const timeInSeconds = set.time ?? 0;
                         const timeInMinutes = timeInSeconds / 60;
                         const value = set.value ?? 0;
+                        
+                        if (effort > 0) {
+                            totalInternalLoadCardio += effort;
+                        }
+
                         if (timeInMinutes > 0) {
-                            totalInternalLoadCardio += timeInMinutes * effort;
                             if (value > 0) totalExternalLoadCardio += timeInMinutes * value;
 
                             if (cardioRef && value > 0) {
@@ -220,9 +228,9 @@ const RoutinesStatsModal: React.FC<RoutinesStatsModalProps> = ({ title, analyzed
                             }
                         }
                     } else if (exercise.category === ExerciseCategory.FLEXIBILITY) {
-                        const avgReps = getAverageReps(set);
-                        const baseValue = exercise.measurementType === MeasurementType.TIME ? ((set.time ?? 0) / 60) : avgReps;
-                        if (baseValue > 0) totalInternalLoadFlex += baseValue * effort;
+                        if (effort > 0) {
+                            totalInternalLoadFlex += effort;
+                        }
 
                         let intensityCategory = 'Moderada';
                         if (effort >= 7) intensityCategory = 'Alta';
@@ -262,10 +270,10 @@ const RoutinesStatsModal: React.FC<RoutinesStatsModalProps> = ({ title, analyzed
 
         return {
             totalVolume: Math.round(totalVolume),
-            totalInternalLoadResisted: Math.round(totalInternalLoadResisted),
+            totalInternalLoadResisted: totalInternalLoadResisted,
             totalExternalLoadCardio: Math.round(totalExternalLoadCardio),
-            totalInternalLoadCardio: Math.round(totalInternalLoadCardio),
-            totalInternalLoadFlex: Math.round(totalInternalLoadFlex),
+            totalInternalLoadCardio: totalInternalLoadCardio,
+            totalInternalLoadFlex: totalInternalLoadFlex,
             seriesByMuscleResisted: resistedChartData,
             seriesByMuscleFlex: flexibilityChartData,
             cardioIntensityDistribution: cardioChartData
@@ -358,7 +366,11 @@ const RoutinesStatsModal: React.FC<RoutinesStatsModalProps> = ({ title, analyzed
                         <h4 className="text-lg font-bold mb-3 border-b border-light-border dark:border-dark-border pb-1">Resistido</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                             <StatCard title="Volume Total Planejado" value={stats.totalVolume.toLocaleString('pt-BR')} unit="Kg" />
-                            <StatCard title="Carga Interna Planejada" value={stats.totalInternalLoadResisted.toLocaleString('pt-BR')} unit="UA" />
+                            <div className="bg-light-bg dark:bg-dark-bg p-4 rounded-lg text-center">
+                                <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary">Carga Interna Planejada</p>
+                                <p className="text-2xl font-bold text-light-text dark:text-dark-text">{stats.totalInternalLoadResisted.toLocaleString('pt-BR')} <span className="text-lg font-medium">UA</span></p>
+                                <p className="text-[10px] text-light-text-secondary mt-1">Soma do esforço (PSE) planejado</p>
+                            </div>
                         </div>
                          <div>
                             <h5 className="text-md font-semibold text-light-text dark:text-dark-text mb-1">Séries Planejadas por Grupo Muscular (Intensidade por 1RM)</h5>
@@ -372,7 +384,11 @@ const RoutinesStatsModal: React.FC<RoutinesStatsModalProps> = ({ title, analyzed
                         <h4 className="text-lg font-bold mb-3 border-b border-light-border dark:border-dark-border pb-1">Cardiovascular</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
                             <StatCard title="Carga Externa Planejada" value={stats.totalExternalLoadCardio.toLocaleString('pt-BR')} unit="UA" />
-                            <StatCard title="Carga Interna Planejada" value={stats.totalInternalLoadCardio.toLocaleString('pt-BR')} unit="UA" />
+                            <div className="bg-light-bg dark:bg-dark-bg p-4 rounded-lg text-center">
+                                <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary">Carga Interna Planejada</p>
+                                <p className="text-2xl font-bold text-light-text dark:text-dark-text">{stats.totalInternalLoadCardio.toLocaleString('pt-BR')} <span className="text-lg font-medium">UA</span></p>
+                                <p className="text-[10px] text-light-text-secondary mt-1">Soma do esforço (PSE) planejado</p>
+                            </div>
                         </div>
 
                         <div className="space-y-4">
@@ -429,7 +445,11 @@ const RoutinesStatsModal: React.FC<RoutinesStatsModalProps> = ({ title, analyzed
                     <section>
                         <h4 className="text-lg font-bold mb-3 border-b border-light-border dark:border-dark-border pb-1">Flexibilidade</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                            <StatCard title="Carga Interna Planejada" value={stats.totalInternalLoadFlex.toLocaleString('pt-BR')} unit="UA" />
+                            <div className="bg-light-bg dark:bg-dark-bg p-4 rounded-lg text-center">
+                                <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary">Carga Interna Planejada</p>
+                                <p className="text-2xl font-bold text-light-text dark:text-dark-text">{stats.totalInternalLoadFlex.toLocaleString('pt-BR')} <span className="text-lg font-medium">UA</span></p>
+                                <p className="text-[10px] text-light-text-secondary mt-1">Soma do esforço (PERFLEX) planejado</p>
+                            </div>
                         </div>
                          <div>
                             <h5 className="text-md font-semibold text-light-text dark:text-dark-text mb-1">Séries Planejadas por Grupo Muscular (Intensidade por PERFLEX)</h5>
