@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { View } from '../types';
 import { RepeatIcon, DumbbellIcon, CalendarIcon, BarChartIcon, SettingsIcon } from './Icons';
@@ -39,7 +38,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView }) => {
     ];
 
     return (
-        <aside className="hidden xl:flex flex-col w-64 bg-light-card dark:bg-dark-card border-r border-light-border dark:border-dark-border p-4 flex-shrink-0">
+        <aside className="hidden lg:flex flex-col w-64 bg-light-card dark:bg-dark-card border-r border-light-border dark:border-dark-border p-4 flex-shrink-0">
             <div className="flex items-center mb-10 px-2">
                 <DumbbellIcon className="h-8 w-8 text-primary" />
                 <h1 className="text-2xl font-bold ml-3 text-light-text dark:text-dark-text">Vitruvian Fit</h1>

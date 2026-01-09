@@ -1,13 +1,14 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp } from '../App';
-import { Exercise, WorkoutSession, LoggedExercise, WorkoutSet, MeasurementType, Unit, PerceivedExertionScale, ExerciseCategory, Evaluation, PlannedExercise } from '../types';
-import { ChevronLeftIcon, PlusIcon, TrashIcon, XIcon, CheckCircleIcon, ChevronDownIcon, DumbbellIcon, InfoIcon, GripVerticalIcon, SearchIcon, MinimizeIcon, PlayIcon } from '../components/Icons';
+import { Exercise, WorkoutSession, WorkoutSet, MeasurementType, Unit, PerceivedExertionScale, ExerciseCategory, Evaluation, PlannedExercise, SetType, CardioMethod, FlexibilityMethod } from '../types';
+import { ChevronLeftIcon, PlusIcon, TrashIcon, XIcon, CheckCircleIcon, ChevronDownIcon, DumbbellIcon, InfoIcon, SearchIcon, MinimizeIcon, PlayIcon, HeartPulseIcon, StretchIcon, ChevronUpIcon, CopyIcon } from '../components/Icons';
 import { getScaleOptions } from '../constants';
 import ConfirmationModal from '../components/ConfirmationModal';
 import { formatSecondsToMMSS, formatDuration, parseTimeToSeconds, vibrate } from '../utils';
 import ExerciseInfoModal from '../components/ExerciseInfoModal';
 import EffortPicker from '../components/EffortPicker';
+import MethodPicker from '../components/MethodPicker';
 
 // Time Input Component for better UX
 interface TimeInputProps {
@@ -78,22 +79,30 @@ const WorkoutSessionScreen: React.FC = () => {
     const [now, setNow] = useState(() => Date.now());
     const [isTimerEditModalOpen, setIsTimerEditModalOpen] = useState(false);
     const [infoExercise, setInfoExercise] = useState<Exercise | null>(null);
-    const [draggingId, setDraggingId] = useState<string | null>(null);
-    const [dropIndicator, setDropIndicator] = useState<{targetId: string, position: 'top' | 'bottom'} | null>(null);
-    
-    const scrollContainerRef = useRef<HTMLElement>(null);
-    const scrollIntervalRef = useRef<number | null>(null);
-    const scrollDirectionRef = useRef<'up' | 'down' | null>(null);
-    const lastClientY = useRef<number>(0);
     const [isExercisePickerOpen, setIsExercisePickerOpen] = useState(false);
     const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
     const [isFinishConfirmOpen, setIsFinishConfirmOpen] = useState(false);
+
+    // Method Options
+    const setTypeOptions = Object.values(SetType).map(t => ({ value: t, label: t }));
+    const cardioOptions = Object.values(CardioMethod).map(m => ({ value: m, label: m }));
+    const flexOptions = Object.values(FlexibilityMethod).map(m => ({ value: m, label: m }));
 
     const routine = useMemo(() => {
         if (activeWorkoutSession?.routineId === 'internal_test') {
             return { name: 'Teste de Desempenho' };
         }
-        return routines.find((r: any) => r.id === activeWorkoutSession?.routineId);
+        
+        // 1. Try to find existing routine
+        const foundRoutine = routines.find((r: any) => r.id === activeWorkoutSession?.routineId);
+        
+        // 2. Try to find snapshot in current active session
+        if (!foundRoutine && activeWorkoutSession?.routineSnapshot) {
+            return activeWorkoutSession.routineSnapshot;
+        }
+
+        // 3. Fallback
+        return foundRoutine || { name: 'Rotina Arquivada', color: '#9CA3AF', notes: '' };
     }, [routines, activeWorkoutSession]);
 
     const elapsedTime = useMemo(() => {
@@ -125,133 +134,6 @@ const WorkoutSessionScreen: React.FC = () => {
         };
     }, [activeWorkoutSession]);
     
-    const scrollLoop = () => {
-        if (scrollDirectionRef.current && scrollContainerRef.current) {
-            const container = scrollContainerRef.current;
-            const rect = container.getBoundingClientRect();
-            
-            const hotZoneHeight = 60;
-            const maxSpeed = 15;
-            const minSpeed = 1;
-
-            let speed = 0;
-            const y = lastClientY.current - rect.top;
-
-            if (scrollDirectionRef.current === 'up') {
-                const proximity = (hotZoneHeight - y) / hotZoneHeight;
-                if (proximity > 0) {
-                   const additionalSpeed = (maxSpeed - minSpeed) * Math.pow(proximity, 3);
-                   speed = -(minSpeed + additionalSpeed);
-                }
-            } else if (scrollDirectionRef.current === 'down') {
-                const proximity = (y - (rect.height - hotZoneHeight)) / hotZoneHeight;
-                if (proximity > 0) {
-                    const additionalSpeed = (maxSpeed - minSpeed) * Math.pow(proximity, 2);
-                    speed = minSpeed + additionalSpeed;
-                }
-            }
-
-            if (speed !== 0) {
-                container.scrollTop += speed;
-                scrollIntervalRef.current = requestAnimationFrame(scrollLoop);
-            } else {
-                stopScrolling();
-            }
-        }
-    };
-
-    const stopScrolling = () => {
-        if (scrollIntervalRef.current) {
-            cancelAnimationFrame(scrollIntervalRef.current);
-            scrollIntervalRef.current = null;
-        }
-        scrollDirectionRef.current = null;
-    };
-    
-    const handleContainerDragOver = (e: React.DragEvent<HTMLElement>) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        if (!draggingId || !scrollContainerRef.current) return;
-        
-        lastClientY.current = e.clientY;
-
-        const container = scrollContainerRef.current;
-        const rect = container.getBoundingClientRect();
-        const y = e.clientY - rect.top;
-
-        const hotZoneHeight = 60;
-
-        if (y < hotZoneHeight) {
-            if (scrollDirectionRef.current !== 'up') {
-                stopScrolling();
-                scrollDirectionRef.current = 'up';
-                scrollIntervalRef.current = requestAnimationFrame(scrollLoop);
-            }
-        } else if (y > rect.height - hotZoneHeight) {
-            if (scrollDirectionRef.current !== 'down') {
-                stopScrolling();
-                scrollDirectionRef.current = 'down';
-                scrollIntervalRef.current = requestAnimationFrame(scrollLoop);
-            }
-        } else {
-            stopScrolling();
-        }
-
-        const directTarget = e.target as HTMLElement;
-        const targetElement = directTarget.closest('[data-drag-id]') as HTMLElement | null;
-
-        if (!targetElement) return;
-
-        const targetId = targetElement.dataset.dragId;
-        if (!targetId || targetId === draggingId) return;
-
-        const targetRect = targetElement.getBoundingClientRect();
-        const midpointY = targetRect.top + targetRect.height / 2;
-        const position = e.clientY < midpointY ? 'top' : 'bottom';
-
-        if (dropIndicator?.targetId !== targetId || dropIndicator?.position !== position) {
-            setDropIndicator({ targetId, position });
-        }
-    };
-
-    const handleDrop = (e: React.DragEvent<HTMLElement>) => {
-        e.preventDefault();
-        if (!draggingId || !dropIndicator) {
-            handleDragEnd();
-            return;
-        }
-
-        const { targetId, position } = dropIndicator;
-        
-        setActiveWorkoutSession((current: WorkoutSession | null) => {
-            if (!current) return null;
-            const prev = current.loggedExercises;
-            const draggedItem = prev.find(p => p.tempId === draggingId);
-            if (!draggedItem) return current;
-
-            const items = prev.filter(p => p.tempId !== draggingId);
-            let targetIndex = items.findIndex(p => p.tempId === targetId);
-            if (targetIndex === -1) return current;
-            
-            if (position === 'bottom') targetIndex++;
-            items.splice(targetIndex, 0, draggedItem);
-            return { ...current, loggedExercises: items };
-        });
-        handleDragEnd();
-    };
-
-    const handleDragStart = (e: React.DragEvent, tempId: string) => {
-        setDraggingId(tempId);
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', tempId);
-    };
-
-    const handleDragEnd = () => {
-        stopScrolling();
-        setDraggingId(null);
-        setDropIndicator(null);
-    };
-
     const handleAddExercise = (exerciseId: string) => {
         const exerciseToAdd = exercises.find(e => e.id === exerciseId);
         if (!exerciseToAdd) return;
@@ -271,7 +153,7 @@ const WorkoutSessionScreen: React.FC = () => {
             return;
         }
 
-        const newLoggedExercise: LoggedExercise = {
+        const newLoggedExercise: PlannedExercise = {
             exerciseId,
             sets: [{}],
             notes: '',
@@ -291,10 +173,31 @@ const WorkoutSessionScreen: React.FC = () => {
         });
     };
 
+    const handleDuplicateLoggedExercise = (index: number) => {
+        setActiveWorkoutSession((current: WorkoutSession | null) => {
+            if (!current) return null;
+            const exerciseToDuplicate = current.loggedExercises[index];
+            const newExercise = {
+                ...JSON.parse(JSON.stringify(exerciseToDuplicate)),
+                tempId: `le-${Date.now()}-dup`
+            };
+            const newLoggedExercises = [...current.loggedExercises];
+            newLoggedExercises.splice(index + 1, 0, newExercise);
+            return { ...current, loggedExercises: newLoggedExercises };
+        });
+    };
+
     const handleExerciseNoteChange = (tempId: string, value: string) => {
         setActiveWorkoutSession((current: WorkoutSession | null) => {
             if (!current) return null;
             return { ...current, loggedExercises: current.loggedExercises.map(log => log.tempId === tempId ? { ...log, notes: value } : log) };
+        });
+    };
+
+    const handleExerciseMethodChange = (tempId: string, value: string) => {
+        setActiveWorkoutSession((current: WorkoutSession | null) => {
+            if (!current) return null;
+            return { ...current, loggedExercises: current.loggedExercises.map(log => log.tempId === tempId ? { ...log, method: value } : log) };
         });
     };
 
@@ -306,7 +209,7 @@ const WorkoutSessionScreen: React.FC = () => {
                 const newSets = [...log.sets];
                 const updatedSet = { ...(newSets[setIndex] || {}) };
                 if (field === 'effort') {
-                    updatedSet.effort = value === '' ? undefined : value;
+                    (updatedSet as any)[field] = value === '' ? undefined : value;
                 } else {
                     const numericValue = value === '' ? undefined : Number(value);
                     (updatedSet as any)[field] = numericValue;
@@ -488,6 +391,24 @@ const WorkoutSessionScreen: React.FC = () => {
         setIsTimerEditModalOpen(false);
     };
 
+    const handleMoveExerciseUp = (index: number) => {
+        setActiveWorkoutSession((current: WorkoutSession | null) => {
+            if (!current || index === 0) return current;
+            const newLoggedExercises = [...current.loggedExercises];
+            [newLoggedExercises[index - 1], newLoggedExercises[index]] = [newLoggedExercises[index], newLoggedExercises[index - 1]];
+            return { ...current, loggedExercises: newLoggedExercises };
+        });
+    };
+
+    const handleMoveExerciseDown = (index: number) => {
+        setActiveWorkoutSession((current: WorkoutSession | null) => {
+            if (!current || index === current.loggedExercises.length - 1) return current;
+            const newLoggedExercises = [...current.loggedExercises];
+            [newLoggedExercises[index + 1], newLoggedExercises[index]] = [newLoggedExercises[index], newLoggedExercises[index + 1]];
+            return { ...current, loggedExercises: newLoggedExercises };
+        });
+    };
+
     if (!activeWorkoutSession || !routine) {
         return (
             <div className="p-4 text-center">
@@ -520,13 +441,8 @@ const WorkoutSessionScreen: React.FC = () => {
                     Cancelar
                 </button>
             </header>
-            <main
-                ref={scrollContainerRef}
-                onDragOver={handleContainerDragOver}
-                onDrop={handleDrop}
-                className="flex-grow overflow-y-auto p-4 space-y-4"
-            >
-                {routine.notes && (
+            <main className="flex-grow overflow-y-auto p-4 space-y-4">
+                {'notes' in routine && routine.notes && (
                     <div className="bg-light-card dark:bg-dark-card p-3 rounded-lg border-l-4" style={{borderColor: routine.color || '#DB2777'}}>
                         <h3 className="text-md font-semibold text-light-text dark:text-dark-text mb-1">Anotações da Rotina</h3>
                         <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary italic">"{routine.notes}"</p>
@@ -540,20 +456,72 @@ const WorkoutSessionScreen: React.FC = () => {
                     const exerciseSets = loggedEx.sets || [];
                     const setsToRender = exerciseSets.length > 0 ? exerciseSets : [{}];
                     return (
-                        <React.Fragment key={loggedEx.tempId}>
-                            {dropIndicator && dropIndicator.targetId === loggedEx.tempId && dropIndicator.position === 'top' && (
-                                <div className="h-1.5 bg-secondary rounded-full my-1"></div>
-                            )}
-                            <div
-                                data-drag-id={loggedEx.tempId}
-                                draggable
-                                onDragStart={(e) => handleDragStart(e, loggedEx.tempId!)}
-                                onDragEnd={handleDragEnd}
-                                className={`bg-light-card dark:bg-dark-card p-4 rounded-lg space-y-4 cursor-grab transition-opacity ${draggingId === loggedEx.tempId ? 'opacity-40' : 'opacity-100'}`}
-                            >
+                        <div
+                            key={loggedEx.tempId}
+                            className="bg-light-card dark:bg-dark-card p-4 rounded-lg space-y-4"
+                        >
+                            <div className="flex flex-col gap-2">
+                                <div className="flex items-center justify-between">
+                                    {exercise.category === ExerciseCategory.RESISTED && (
+                                        <MethodPicker
+                                            value={loggedEx.method || SetType.NORMAL}
+                                            onChange={(val) => handleExerciseMethodChange(loggedEx.tempId!, val || '')}
+                                            options={setTypeOptions}
+                                            title="Selecionar Método"
+                                            className={`text-sm font-bold ${
+                                                loggedEx.method === SetType.WARM_UP ? 'text-yellow-600 dark:text-yellow-400' :
+                                                (loggedEx.method && loggedEx.method !== SetType.NORMAL) ? 'text-secondary' : 
+                                                'text-light-text dark:text-dark-text'
+                                            }`}
+                                        />
+                                    )}
+                                    {exercise.category === ExerciseCategory.CARDIO && (
+                                        <MethodPicker
+                                            value={loggedEx.method || undefined}
+                                            onChange={(val) => handleExerciseMethodChange(loggedEx.tempId!, val || '')}
+                                            options={cardioOptions}
+                                            title="Selecionar Método Cardio"
+                                            placeholder="Selecionar Método"
+                                            className="text-sm font-bold text-light-text dark:text-dark-text"
+                                        />
+                                    )}
+                                    {exercise.category === ExerciseCategory.FLEXIBILITY && (
+                                        <MethodPicker
+                                            value={loggedEx.method || undefined}
+                                            onChange={(val) => handleExerciseMethodChange(loggedEx.tempId!, val || '')}
+                                            options={flexOptions}
+                                            title="Selecionar Método Flexibilidade"
+                                            placeholder="Selecionar Método"
+                                            className="text-sm font-bold text-light-text dark:text-dark-text"
+                                        />
+                                    )}
+                                    {/* Icons Row */}
+                                    <div className="flex items-center justify-end gap-1 ml-auto">
+                                        <button type="button" onClick={() => handleRemoveExercise(loggedEx.tempId!)} className="p-2 flex items-center justify-center text-light-text-secondary dark:text-dark-text-secondary hover:text-red-500" aria-label={`Remover ${exercise.name} do treino`}>
+                                            <TrashIcon className="h-5 w-5" />
+                                        </button>
+                                        <button type="button" onClick={() => handleDuplicateLoggedExercise(exIndex)} className="p-2 text-light-text-secondary hover:text-primary" aria-label="Duplicar">
+                                            <CopyIcon className="h-5 w-5" />
+                                        </button>
+                                        <button type="button" onClick={() => setInfoExercise(exercise)} className="p-2 flex items-center justify-center text-light-text-secondary dark:text-dark-text-secondary hover:text-blue-500" aria-label={`Informações sobre ${exercise.name}`}>
+                                            <InfoIcon className="h-5 w-5" />
+                                        </button>
+                                        <div className="flex gap-1">
+                                            {exIndex > 0 && (
+                                                <button type="button" onClick={() => handleMoveExerciseUp(exIndex)} className="p-2 text-light-text-secondary hover:text-primary" aria-label="Mover para cima">
+                                                    <ChevronUpIcon className="h-5 w-5" />
+                                                </button>
+                                            )}
+                                            {exIndex < loggedExercises.length - 1 && (
+                                                <button type="button" onClick={() => handleMoveExerciseDown(exIndex)} className="p-2 text-light-text-secondary hover:text-primary" aria-label="Mover para baixo">
+                                                    <ChevronDownIcon className="h-5 w-5" />
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
                                 <div className="flex justify-between items-center">
                                     <div className="flex items-center gap-2">
-                                        <GripVerticalIcon className="h-5 w-5 text-light-text-secondary dark:text-dark-text-secondary flex-shrink-0" />
                                         <div className="w-12 h-12 bg-light-bg dark:bg-dark-bg rounded-md flex-shrink-0 flex items-center justify-center">
                                             {exercise.imageUrl ? (
                                                 <img
@@ -572,95 +540,88 @@ const WorkoutSessionScreen: React.FC = () => {
                                             {exercise.includeBarbellWeight && (<span className="text-xs bg-gray-200 dark:bg-gray-700 text-light-text-secondary dark:text-dark-text-secondary px-2 py-0.5 rounded-full whitespace-nowrap">Peso da Barra</span>)}
                                             {exercise.isWeightDoubled && (<span className="text-xs bg-gray-200 dark:bg-gray-700 text-light-text-secondary dark:text-dark-text-secondary px-2 py-0.5 rounded-full whitespace-nowrap">Peso 2x</span>)}
                                         </div>
-                                        <button type="button" onClick={() => setInfoExercise(exercise)} className="p-1 flex items-center justify-center text-light-text-secondary dark:text-dark-text-secondary hover:text-blue-500" aria-label={`Informações sobre ${exercise.name}`}>
-                                            <InfoIcon className="h-5 w-5" />
-                                        </button>
                                     </div>
-                                    <button type="button" onClick={() => handleRemoveExercise(loggedEx.tempId!)} className="p-1 flex items-center justify-center text-light-text-secondary dark:text-dark-text-secondary hover:text-red-500" aria-label={`Remover ${exercise.name} do treino`}>
-                                        <TrashIcon className="h-5 w-5" />
-                                    </button>
                                 </div>
-                                <textarea
-                                    value={loggedEx.notes || ''}
-                                    onChange={(e) => handleExerciseNoteChange(loggedEx.tempId!, e.target.value)}
-                                    placeholder="Anotações do treino para este exercício..."
-                                    rows={2}
-                                    className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2 text-sm"
-                                />
-                                {exercise.includeBarbellWeight && (
-                                    <div className="mt-3">
-                                        <label htmlFor={`barbell-${loggedEx.tempId}`} className="block text-sm font-medium mb-1">Peso da Barra (kg)</label>
-                                        <input
-                                            type="number"
-                                            id={`barbell-${loggedEx.tempId}`}
-                                            inputMode="decimal"
-                                            step="any"
-                                            value={loggedEx.barbellWeight ?? ''}
-                                            placeholder={(originalPlanRef.current[exIndex]?.barbellWeight ?? '').toString()}
-                                            onChange={(e) => handleBarbellWeightChange(loggedEx.tempId!, e.target.value)}
-                                            className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2"
-                                        />
-                                    </div>
-                                )}
-                                <div className="space-y-3">
-                                    {setsToRender.map((set, setIndex) => {
-                                        const originalSet = originalPlanRef.current[exIndex]?.sets[setIndex] || {};
-                                        const isCountType = exercise.measurementType === MeasurementType.COUNT;
-                                        
-                                        let repsTimePlaceholder = isCountType ? ((originalSet.repsMin !== undefined || originalSet.repsMax !== undefined) ? `${originalSet.repsMin ?? ''}-${originalSet.repsMax ?? ''}` : originalSet.reps?.toString() ?? '') : (formatSecondsToMMSS(originalSet.time) || "MM:SS");
-                                        const valuePlaceholder = originalSet.value?.toString() ?? '';
-                                        const effortFromPlan = originalSet.effort;
+                            </div>
+                            <textarea
+                                value={loggedEx.notes || ''}
+                                onChange={(e) => handleExerciseNoteChange(loggedEx.tempId!, e.target.value)}
+                                placeholder="Anotações do treino para este exercício..."
+                                rows={2}
+                                className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2 text-sm"
+                            />
+                            {exercise.includeBarbellWeight && (
+                                <div className="mt-3">
+                                    <label htmlFor={`barbell-${loggedEx.tempId}`} className="block text-sm font-medium mb-1">Peso da Barra (kg)</label>
+                                    <input
+                                        type="number"
+                                        id={`barbell-${loggedEx.tempId}`}
+                                        inputMode="decimal"
+                                        step="any"
+                                        value={loggedEx.barbellWeight ?? ''}
+                                        placeholder={(originalPlanRef.current[exIndex]?.barbellWeight ?? '').toString()}
+                                        onChange={(e) => handleBarbellWeightChange(loggedEx.tempId!, e.target.value)}
+                                        className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2"
+                                    />
+                                </div>
+                            )}
+                            <div className="space-y-3">
+                                {setsToRender.map((set, setIndex) => {
+                                    const originalSet = originalPlanRef.current[exIndex]?.sets[setIndex] || {};
+                                    const isCountType = exercise.measurementType === MeasurementType.COUNT;
+                                    
+                                    let repsTimePlaceholder = isCountType ? ((originalSet.repsMin !== undefined || originalSet.repsMax !== undefined) ? `${originalSet.repsMin ?? ''}-${originalSet.repsMax ?? ''}` : originalSet.reps?.toString() ?? '') : (formatSecondsToMMSS(originalSet.time) || "MM:SS");
+                                    const valuePlaceholder = originalSet.value?.toString() ?? '';
+                                    const effortFromPlan = originalSet.effort;
 
-                                        return (
-                                            <div key={setIndex} className={`bg-light-bg dark:bg-dark-bg p-3 rounded-lg space-y-3 transition-opacity ${set.completed ? 'opacity-50' : ''}`}>
-                                                <div className="flex justify-between items-center">
-                                                    <div className="flex items-center gap-3 cursor-pointer" onClick={() => handleToggleSetComplete(loggedEx.tempId!, setIndex)}>
-                                                         <input type="checkbox" aria-label={`Marcar série ${setIndex + 1} como completa`} checked={!!set.completed} readOnly className="h-5 w-5 rounded text-secondary bg-light-bg dark:bg-dark-bg border-light-border dark:border-dark-border focus:ring-secondary focus:ring-2 cursor-pointer" />
-                                                         <span className={`font-bold text-lg text-light-text dark:text-dark-text ${set.completed ? 'line-through' : ''}`}>
-                                                            {activeWorkoutSession.id.startsWith('ws_test_inc') ? `Estágio ${setIndex + 1}` : `Série ${setIndex + 1}`}
-                                                         </span>
-                                                    </div>
+                                    return (
+                                        <div key={setIndex} className={`bg-light-bg dark:bg-dark-bg p-3 rounded-lg space-y-3 transition-opacity ${set.completed ? 'opacity-50' : ''}`}>
+                                            <div className="flex justify-between items-center">
+                                                <div className="flex items-center gap-3 cursor-pointer" onClick={() => handleToggleSetComplete(loggedEx.tempId!, setIndex)}>
+                                                        <input type="checkbox" aria-label={`Marcar série ${setIndex + 1} como completa`} checked={!!set.completed} readOnly className="h-5 w-5 rounded text-secondary bg-light-bg dark:bg-dark-bg border-light-border dark:border-dark-border focus:ring-secondary focus:ring-2 cursor-pointer" />
+                                                        <span className={`font-bold text-lg text-light-text dark:text-dark-text ${set.completed ? 'line-through' : ''}`}>
+                                                        {activeWorkoutSession.id.startsWith('ws_test_inc') ? `Estágio ${setIndex + 1}` : `Série ${setIndex + 1}`}
+                                                        </span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
                                                     <button onClick={() => handleDeleteSet(loggedEx.tempId!, setIndex)} className="p-2 flex items-center justify-center text-light-text-secondary dark:text-dark-text-secondary hover:text-red-500" aria-label={`Deletar série ${setIndex + 1}`}>
                                                         <TrashIcon className="h-5 w-5" />
                                                     </button>
                                                 </div>
-                                                <div className="flex items-end gap-3">
-                                                    <div className="grow-[2] shrink basis-[80px]">
-                                                        <label className="block text-xs font-medium mb-1 text-light-text-secondary dark:text-dark-text-secondary">{isCountType ? 'Repetições' : 'Tempo'}</label>
-                                                        {isCountType ? (
-                                                            <input type="number" inputMode="numeric" aria-label={`Repetições para série ${setIndex + 1}`} placeholder={repsTimePlaceholder} value={set.reps ?? ''} onFocus={(e) => e.target.select()} onChange={e => handleSetChange(loggedEx.tempId!, setIndex, 'reps', e.target.value)} className={`w-full bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-2 text-center text-light-text dark:text-dark-text transition-colors duration-300 ${set.completed ? 'line-through' : ''}`} />
-                                                        ) : (
-                                                            <TimeInput id={`session-time-input-${loggedEx.tempId}-${setIndex}`} valueInSeconds={set.time} onChangeInSeconds={(seconds) => handleSetChange(loggedEx.tempId!, setIndex, 'time', seconds?.toString() ?? '')} placeholder={repsTimePlaceholder} className={`w-full bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-2 text-center text-light-text dark:text-dark-text transition-colors duration-300 ${set.completed ? 'line-through' : ''}`} />
-                                                        )}
-                                                    </div>
-                                                    {exercise.unit !== Unit.NONE &&
-                                                        <div className="grow-[2] shrink basis-[80px]">
-                                                            <label className="block text-xs font-medium mb-1 text-light-text-secondary dark:text-dark-text-secondary">{exercise.unit}</label>
-                                                            <input type="number" aria-label={`Peso para série ${setIndex + 1}`} placeholder={valuePlaceholder} value={set.value ?? ''} onFocus={(e) => e.target.select()} onChange={e => handleSetChange(loggedEx.tempId!, setIndex, 'value', e.target.value)} className={`w-full bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-2 text-center text-light-text dark:text-dark-text transition-colors duration-300 ${set.completed ? 'line-through' : ''}`} />
-                                                        </div>
-                                                    }
-                                                     {scaleOptions && (
-                                                        <div className="grow-[3] shrink basis-[100px]">
-                                                            <label className="block text-xs font-medium mb-1 text-light-text-secondary dark:text-dark-text-secondary">Esforço</label>
-                                                            <div className="h-10">
-                                                                <EffortPicker value={set.effort} onChange={(val) => handleSetChange(loggedEx.tempId!, setIndex, 'effort', val === undefined ? '' : val)} options={scaleOptions} placeholder={effortFromPlan ? `Sug: ${effortFromPlan}` : 'Selecionar...'} disabled={!!set.completed} />
-                                                            </div>
-                                                        </div>
+                                            </div>
+                                            <div className="flex items-end gap-3">
+                                                <div className="grow-[2] shrink basis-[80px]">
+                                                    <label className="block text-xs font-medium mb-1 text-light-text-secondary dark:text-dark-text-secondary">{isCountType ? 'Repetições' : 'Tempo'}</label>
+                                                    {isCountType ? (
+                                                        <input type="number" inputMode="numeric" aria-label={`Repetições para série ${setIndex + 1}`} placeholder={repsTimePlaceholder} value={set.reps ?? ''} onFocus={(e) => e.target.select()} onChange={e => handleSetChange(loggedEx.tempId!, setIndex, 'reps', e.target.value)} className={`w-full bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-2 text-center text-light-text dark:text-dark-text transition-colors duration-300 ${set.completed ? 'line-through' : ''}`} />
+                                                    ) : (
+                                                        <TimeInput id={`session-time-input-${loggedEx.tempId}-${setIndex}`} valueInSeconds={set.time} onChangeInSeconds={(seconds) => handleSetChange(loggedEx.tempId!, setIndex, 'time', seconds?.toString() ?? '')} placeholder={repsTimePlaceholder} className={`w-full bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-2 text-center text-light-text dark:text-dark-text transition-colors duration-300 ${set.completed ? 'line-through' : ''}`} />
                                                     )}
                                                 </div>
+                                                {exercise.unit !== Unit.NONE &&
+                                                    <div className="grow-[2] shrink basis-[80px]">
+                                                        <label className="block text-xs font-medium mb-1 text-light-text-secondary dark:text-dark-text-secondary">{exercise.unit}</label>
+                                                        <input type="number" aria-label={`Peso para série ${setIndex + 1}`} placeholder={valuePlaceholder} value={set.value ?? ''} onFocus={(e) => e.target.select()} onChange={e => handleSetChange(loggedEx.tempId!, setIndex, 'value', e.target.value)} className={`w-full bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border rounded-md p-2 text-center text-light-text dark:text-dark-text transition-colors duration-300 ${set.completed ? 'line-through' : ''}`} />
+                                                    </div>
+                                                }
+                                                    {scaleOptions && (
+                                                    <div className="w-[75px] shrink-0">
+                                                        <label className="block text-xs font-medium mb-1 text-light-text-secondary dark:text-dark-text-secondary">Esforço</label>
+                                                        <div className="h-10">
+                                                            <EffortPicker value={set.effort} onChange={(val) => handleSetChange(loggedEx.tempId!, setIndex, 'effort', val === undefined ? '' : val)} options={scaleOptions} placeholder={effortFromPlan ? `Sug: ${effortFromPlan}` : 'PSE'} disabled={!!set.completed} />
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
-                                        )
-                                    })}
-                                </div>
-                                <button onClick={() => handleAddSet(loggedEx.tempId!)} className="w-full mt-2 bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-md flex items-center justify-center text-sm">
-                                    <PlusIcon className="h-5 w-5 mr-2" />
-                                    Adicionar Série
-                                </button>
+                                        </div>
+                                    )
+                                })}
                             </div>
-                            {dropIndicator && dropIndicator.targetId === loggedEx.tempId && dropIndicator.position === 'bottom' && (
-                                <div className="h-1.5 bg-secondary rounded-full my-1"></div>
-                            )}
-                        </React.Fragment>
+                            <button onClick={() => handleAddSet(loggedEx.tempId!)} className="w-full mt-2 bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-md flex items-center justify-center text-sm">
+                                <PlusIcon className="h-5 w-5 mr-2" />
+                                Adicionar Série
+                            </button>
+                        </div>
                     );
                 })}
                  <button type="button" onClick={() => setIsExercisePickerOpen(true)} className="w-full mt-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-md flex items-center justify-center">
@@ -683,90 +644,18 @@ const WorkoutSessionScreen: React.FC = () => {
     );
 };
 
-interface TimerEditModalProps {
-    isOpen: boolean;
-    onClose: () => void;
-    onSave: (newTimeInSeconds: number) => void;
-    onResume: (currentSeconds: number) => void;
-    initialTime: number;
-    isCompleted: boolean;
-}
-const TimerEditModal: React.FC<TimerEditModalProps> = ({ isOpen, onClose, onSave, onResume, initialTime, isCompleted }) => {
-    const [newTime, setNewTime] = useState<number | undefined>(initialTime);
-
-    if (!isOpen) return null;
-
-    const handleSave = () => {
-        if (newTime !== undefined) {
-            onSave(newTime);
-        }
-        onClose();
-    };
-
-    const handleResume = () => {
-        if (newTime !== undefined) {
-            onResume(newTime);
-        }
-    };
-
-    return (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
-            <div className="bg-light-card dark:bg-dark-card rounded-lg p-6 w-full max-w-sm text-light-text dark:text-dark-text">
-                <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-xl font-bold">Editar Cronômetro</h3>
-                    <button type="button" onClick={onClose} className="p-1 rounded-full flex items-center justify-center hover:bg-light-bg dark:hover:bg-dark-bg">
-                        <XIcon className="h-6 w-6 text-light-text-secondary dark:text-dark-text-secondary" />
-                    </button>
-                </div>
-                <div className="space-y-4">
-                    <div>
-                        <label htmlFor="timer-edit-input" className="block text-sm font-medium mb-1">Novo tempo (MM:SS)</label>
-                        <TimeInput
-                            id="timer-edit-input"
-                            valueInSeconds={newTime}
-                            onChangeInSeconds={setNewTime}
-                            placeholder="00:00"
-                            className="w-full text-center text-2xl font-bold bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2"
-                        />
-                    </div>
-                    
-                    {isCompleted && (
-                        <button 
-                            type="button" 
-                            onClick={handleResume}
-                            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-md flex items-center justify-center transition-colors"
-                        >
-                            <PlayIcon className="h-5 w-5 mr-2" />
-                            Retomar Cronômetro
-                        </button>
-                    )}
-
-                    <div className="pt-2 flex justify-end items-center space-x-3">
-                        <button type="button" onClick={onClose} className="bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-700 text-gray-800 dark:text-white font-bold py-2 px-4 rounded-md">Cancelar</button>
-                        <button type="button" onClick={handleSave} className="bg-secondary hover:bg-pink-700 text-white font-bold py-2 px-4 rounded-md">Salvar</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-};
-interface ExercisePickerModalProps {
-    onClose: () => void;
-    onSelect: (exerciseId: string) => void;
-    allExercises: Exercise[];
-}
-const ExercisePickerModal: React.FC<ExercisePickerModalProps> = ({ onClose, onSelect, allExercises }) => {
-    const [searchQuery, setSearchQuery] = useState('');
+const ExercisePickerModal = ({ onClose, onSelect, allExercises }: { onClose: () => void; onSelect: (exerciseId: string) => void; allExercises: Exercise[]; }) => {
+    const [query, setQuery] = useState('');
     const [categoryFilter, setCategoryFilter] = useState<ExerciseCategory | null>(null);
 
     const filteredExercises = useMemo(() => {
-        const query = searchQuery.toLowerCase().trim();
+        const queryLower = query.toLowerCase().trim();
         return allExercises.filter(ex => {
-            const searchMatch = !query || ex.name.toLowerCase().includes(query);
+            const searchMatch = !queryLower || ex.name.toLowerCase().includes(queryLower);
             const categoryMatch = !categoryFilter || ex.category === categoryFilter;
             return searchMatch && categoryMatch;
-        });
-    }, [allExercises, searchQuery, categoryFilter]);
+        }).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+    }, [allExercises, query, categoryFilter]);
 
     const exercisesByCategory = useMemo(() => {
         return filteredExercises.reduce((acc, exercise) => {
@@ -775,81 +664,89 @@ const ExercisePickerModal: React.FC<ExercisePickerModalProps> = ({ onClose, onSe
             return acc;
         }, {} as Record<ExerciseCategory, Exercise[]>);
     }, [filteredExercises]);
-    
-    const categoryFilterOptions: { label: string; value: ExerciseCategory | null }[] = [
-        { label: 'Todos', value: null },
-        { label: ExerciseCategory.RESISTED, value: ExerciseCategory.RESISTED },
-        { label: ExerciseCategory.CARDIO, value: ExerciseCategory.CARDIO },
-        { label: ExerciseCategory.FLEXIBILITY, value: ExerciseCategory.FLEXIBILITY }
+
+    const categoryFilterOptions: { label: string; value: ExerciseCategory | null; icon: React.ReactNode }[] = [
+        { label: 'Todos', value: null, icon: null },
+        { label: 'Resistido', value: ExerciseCategory.RESISTED, icon: <DumbbellIcon className="h-4 w-4 mr-1" /> },
+        { label: 'Cardio', value: ExerciseCategory.CARDIO, icon: <HeartPulseIcon className="h-4 w-4 mr-1" /> },
+        { label: 'Flex', value: ExerciseCategory.FLEXIBILITY, icon: <StretchIcon className="h-4 w-4 mr-1" /> }
     ];
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
-            <div className="bg-light-card dark:bg-dark-card rounded-lg p-6 w-full max-w-md max-h-[80vh] flex flex-col text-light-text dark:text-dark-text">
+        <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[60] p-4">
+            <div className="bg-light-card dark:bg-dark-card rounded-lg p-6 w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl">
                 <div className="flex justify-between items-center mb-4 flex-shrink-0">
                     <h3 className="text-xl font-bold">Selecionar Exercício</h3>
-                    <button type="button" onClick={onClose} className="p-1 rounded-full flex items-center justify-center hover:bg-light-bg dark:hover:bg-dark-bg"><XIcon className="h-6 w-6 text-light-text-secondary dark:text-dark-text-secondary" /></button>
+                    <button onClick={onClose} className="p-1 rounded-full hover:bg-light-bg dark:hover:bg-dark-bg transition-colors">
+                        <XIcon className="h-6 w-6 text-light-text-secondary dark:text-dark-text-secondary" />
+                    </button>
                 </div>
-                <div className="flex-shrink-0 space-y-4 mb-4">
+
+                <div className="space-y-4 mb-4 flex-shrink-0">
                     <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <SearchIcon className="h-5 w-5 text-light-text-secondary dark:text-dark-text-secondary" />
-                        </div>
-                        <input
-                            type="text"
-                            placeholder="Buscar por nome..."
-                            value={searchQuery}
-                            onChange={e => setSearchQuery(e.target.value)}
-                            className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-lg py-2 pl-10 pr-4"
-                            autoFocus
+                        <SearchIcon className="h-5 w-5 absolute left-3 top-1/2 -translate-y-1/2 text-light-text-secondary" />
+                        <input 
+                            type="text" 
+                            value={query} 
+                            onChange={e => setQuery(e.target.value)} 
+                            placeholder="Pesquisar..." 
+                            className="w-full bg-light-bg dark:bg-dark-border border border-light-border dark:border-dark-border rounded-md pl-10 pr-4 py-2 text-sm" 
+                            autoFocus 
                         />
                     </div>
-                    <div>
-                        <div className="grid grid-cols-2 gap-1 rounded-lg bg-light-bg dark:bg-dark-bg p-1">
-                            {categoryFilterOptions.map(option => (
-                                <button
-                                    key={option.label}
-                                    type="button"
-                                    onClick={() => setCategoryFilter(option.value)}
-                                    className={`w-full whitespace-nowrap flex items-center justify-center p-2 rounded-md text-xs sm:text-sm font-semibold transition-colors ${
-                                        categoryFilter === option.value
-                                            ? 'bg-primary text-white shadow'
-                                            : 'text-light-text-secondary dark:text-dark-text-secondary hover:bg-light-card dark:hover:bg-dark-border'
-                                    }`}
-                                >
-                                    {option.label}
-                                </button>
-                            ))}
-                        </div>
+
+                    <div className="grid grid-cols-2 gap-1 bg-light-bg dark:bg-dark-bg p-1 rounded-lg">
+                        {categoryFilterOptions.map(option => (
+                            <button
+                                key={option.label}
+                                type="button"
+                                onClick={() => setCategoryFilter(option.value)}
+                                className={`flex items-center justify-center p-2 rounded-md text-xs font-bold transition-all ${
+                                    categoryFilter === option.value
+                                        ? 'bg-primary text-white shadow-md'
+                                        : 'text-light-text-secondary dark:text-dark-text-secondary hover:bg-light-card dark:hover:bg-dark-card'
+                                }`}
+                            >
+                                {option.icon}
+                                {option.label}
+                            </button>
+                        ))}
                     </div>
                 </div>
-                <div className="overflow-y-auto space-y-3 flex-grow pr-1">
-                    {/* Fixed: cast Object.entries to correct type and renamed variable to avoid confusion and shadowing */}
+
+                <div className="flex-grow overflow-y-auto space-y-4 pr-1">
                     {Object.keys(exercisesByCategory).length > 0 ? (
                         (Object.entries(exercisesByCategory) as [string, Exercise[]][]).map(([category, items]) => (
                             <div key={category}>
-                                <h4 className="font-semibold text-light-text-secondary dark:text-dark-text-secondary mt-2 sticky top-0 bg-light-card dark:bg-dark-card py-1">{category}</h4>
-                                {items.map(ex => (
-                                    <button
-                                        key={ex.id}
-                                        onClick={() => onSelect(ex.id)}
-                                        className="w-full text-left p-2 rounded-md flex items-center gap-3 hover:bg-light-bg dark:hover:bg-dark-bg"
-                                    >
-                                        <div className="w-10 h-10 bg-light-bg dark:bg-dark-bg rounded-md flex-shrink-0 flex items-center justify-center">
-                                            {ex.imageUrl ? (
-                                                <img src={ex.imageUrl} alt={ex.name} className="w-full h-full object-cover rounded-md" loading="lazy" />
-                                            ) : (
-                                                <DumbbellIcon className="h-6 w-6 text-light-text-secondary" />
-                                            )}
-                                        </div>
-                                        <span className="flex-grow">{ex.name}</span>
-                                    </button>
-                                ))}
+                                <h4 className="text-[10px] font-black uppercase text-light-text-secondary dark:text-dark-text-secondary tracking-widest mb-2 sticky top-0 bg-light-card dark:bg-dark-card py-1 z-10">
+                                    {category}
+                                </h4>
+                                <div className="space-y-2">
+                                    {items.map(ex => (
+                                        <button 
+                                            key={ex.id} 
+                                            onClick={() => onSelect(ex.id)} 
+                                            className="w-full text-left p-2 rounded-md flex items-center gap-3 hover:bg-light-bg dark:hover:bg-dark-bg transition-colors border border-transparent hover:border-light-border dark:hover:border-dark-border"
+                                        >
+                                            <div className="w-10 h-10 bg-light-bg dark:bg-dark-bg rounded-md flex items-center justify-center flex-shrink-0">
+                                                {ex.imageUrl ? (
+                                                    <img src={ex.imageUrl} className="w-full h-full object-cover rounded-md" alt={ex.name} />
+                                                ) : (
+                                                    <DumbbellIcon className="h-6 w-6 text-light-text-secondary" />
+                                                )}
+                                            </div>
+                                            <div className="min-w-0">
+                                                <span className="font-semibold block text-sm whitespace-normal leading-tight">{ex.name}</span>
+                                                <span className="text-[10px] text-light-text-secondary truncate block">{ex.primaryMuscles.join(', ')}</span>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
                         ))
                     ) : (
-                        <div className="text-center py-10 text-light-text-secondary dark:text-dark-text-secondary">
-                            Nenhum exercício encontrado.
+                        <div className="text-center py-10">
+                            <p className="text-sm text-light-text-secondary">Nenhum exercício encontrado.</p>
                         </div>
                     )}
                 </div>
@@ -857,4 +754,69 @@ const ExercisePickerModal: React.FC<ExercisePickerModalProps> = ({ onClose, onSe
         </div>
     );
 };
+
+const TimerEditModal = ({ isOpen, onClose, onSave, onResume, initialTime, isCompleted }: { isOpen: boolean; onClose: () => void; onSave: (seconds: number) => void; onResume: (seconds: number) => void; initialTime: number; isCompleted: boolean; }) => {
+    const [hours, setHours] = useState(Math.floor(initialTime / 3600));
+    const [minutes, setMinutes] = useState(Math.floor((initialTime % 3600) / 60));
+    const [seconds, setSeconds] = useState(initialTime % 60);
+
+    if (!isOpen) return null;
+
+    const getTotalSeconds = () => {
+        return (hours * 3600) + (minutes * 60) + seconds;
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
+            <div className="bg-light-card dark:bg-dark-card rounded-lg p-6 w-full max-w-xs shadow-2xl">
+                <h3 className="text-xl font-bold mb-4 text-center">Editar Tempo</h3>
+                <div className="flex justify-center items-center gap-2 mb-6">
+                    <div className="flex flex-col items-center">
+                        <input
+                            type="number"
+                            value={hours}
+                            onChange={(e) => setHours(Math.max(0, parseInt(e.target.value) || 0))}
+                            className="w-16 p-2 text-center text-xl bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md"
+                        />
+                        <span className="text-xs text-light-text-secondary mt-1">h</span>
+                    </div>
+                    <span className="text-xl font-bold">:</span>
+                    <div className="flex flex-col items-center">
+                        <input
+                            type="number"
+                            value={minutes}
+                            onChange={(e) => setMinutes(Math.max(0, parseInt(e.target.value) || 0))}
+                            className="w-16 p-2 text-center text-xl bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md"
+                        />
+                        <span className="text-xs text-light-text-secondary mt-1">m</span>
+                    </div>
+                    <span className="text-xl font-bold">:</span>
+                    <div className="flex flex-col items-center">
+                        <input
+                            type="number"
+                            value={seconds}
+                            onChange={(e) => setSeconds(Math.max(0, parseInt(e.target.value) || 0))}
+                            className="w-16 p-2 text-center text-xl bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md"
+                        />
+                        <span className="text-xs text-light-text-secondary mt-1">s</span>
+                    </div>
+                </div>
+                <div className="space-y-2">
+                    <button onClick={() => { onSave(getTotalSeconds()); onClose(); }} className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-md">
+                        Salvar Tempo
+                    </button>
+                    {isCompleted && (
+                        <button onClick={() => { onResume(getTotalSeconds()); }} className="w-full bg-secondary hover:bg-pink-700 text-white font-bold py-2 px-4 rounded-md">
+                            Retomar Treino
+                        </button>
+                    )}
+                    <button onClick={onClose} className="w-full bg-gray-200 dark:bg-gray-700 text-light-text dark:text-dark-text font-bold py-2 px-4 rounded-md">
+                        Cancelar
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 export default WorkoutSessionScreen;

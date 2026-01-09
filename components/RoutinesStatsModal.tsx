@@ -1,9 +1,10 @@
+
 import React, { useMemo, useState, useEffect } from 'react';
 import { Routine, Exercise, ExerciseCategory, Unit, MeasurementType, Evaluation, WorkoutSession } from '../types';
 import { useApp } from '../App';
 import { XIcon, BarChartIcon, FileTextIcon, SettingsIcon } from './Icons';
 import { HorizontalBarChart, ChartData } from './Charts';
-import { parseEffortToNumber, getAverageReps } from '../utils';
+import { parseEffortToNumber, getAverageReps, shareFile } from '../utils';
 import CustomSelect from './CustomSelect';
 
 interface RoutinesStatsModalProps {
@@ -13,6 +14,21 @@ interface RoutinesStatsModalProps {
     evaluations: Evaluation[];
     onClose: () => void;
 }
+
+const resistedLegend = [
+    { label: 'Alta (≥ 85% 1RM)', color: '#DB2777' },
+    { label: 'Moderada (60-84% 1RM)', color: '#F59E0B' },
+    { label: 'Leve (30-59% 1RM)', color: '#10B981' },
+    { label: 'Muito Leve (< 30% 1RM)', color: '#3B82F6' },
+    { label: 'Indefinido', color: '#6B7280' },
+];
+
+const flexibilityLegend = [
+    { label: 'Alta', color: '#DB2777' },
+    { label: 'Moderada', color: '#F59E0B' },
+    { label: 'Leve', color: '#10B981' },
+    { label: 'Muito Leve', color: '#3B82F6' },
+];
 
 const StatCard: React.FC<{ title: string; value: string; unit: string }> = ({ title, value, unit }) => (
     <div className="bg-light-bg dark:bg-dark-bg p-4 rounded-lg text-center">
@@ -94,7 +110,7 @@ const RoutinesStatsModal: React.FC<RoutinesStatsModalProps> = ({ title, analyzed
 
                 loggedEx.sets.forEach(set => {
                     const effortValue = parseEffortToNumber(set.effort);
-                    if (effortValue < 9) return; 
+                    if (effortValue < 9.5) return; 
 
                     const reps = set.reps ?? 0;
                     const barbell = loggedEx.barbellWeight ?? 0;
@@ -148,14 +164,19 @@ const RoutinesStatsModal: React.FC<RoutinesStatsModalProps> = ({ title, analyzed
         };
 
         muscleGroups.forEach(m => {
-            intensityMapResisted.set(m, { 'Alta': 0, 'Moderada': 0, 'Leve': 0, 'Muito Leve': 0 });
+            intensityMapResisted.set(m, { 'Alta (≥ 85% 1RM)': 0, 'Moderada (60-84% 1RM)': 0, 'Leve (30-59% 1RM)': 0, 'Muito Leve (< 30% 1RM)': 0, 'Indefinido': 0 });
             intensityMapFlex.set(m, { 'Alta': 0, 'Moderada': 0, 'Leve': 0, 'Muito Leve': 0 });
         });
 
         const intensityColors: Record<string, string> = {
-            'Alta': '#EF4444',
-            'Moderada': '#DB2777',
-            'Leve': '#F59E0B',
+            'Alta (≥ 85% 1RM)': '#DB2777',
+            'Moderada (60-84% 1RM)': '#F59E0B',
+            'Leve (30-59% 1RM)': '#10B981',
+            'Muito Leve (< 30% 1RM)': '#3B82F6',
+            'Indefinido': '#6B7280',
+            'Alta': '#DB2777',
+            'Moderada': '#F59E0B',
+            'Leve': '#10B981',
             'Muito Leve': '#3B82F6'
         };
 
@@ -189,13 +210,13 @@ const RoutinesStatsModal: React.FC<RoutinesStatsModalProps> = ({ title, analyzed
                                     totalVolume += avgReps * calculatedLoad;
                                 }
 
-                                let intensityCategory = 'Moderada';
+                                let intensityCategory = 'Indefinido';
                                 if (max1RM && max1RM > 0) {
                                     const percentage = (calculatedLoad / max1RM) * 100;
-                                    if (percentage >= 85) intensityCategory = 'Alta';
-                                    else if (percentage >= 60) intensityCategory = 'Moderada';
-                                    else if (percentage >= 30) intensityCategory = 'Leve';
-                                    else intensityCategory = 'Muito Leve';
+                                    if (percentage >= 85) intensityCategory = 'Alta (≥ 85% 1RM)';
+                                    else if (percentage >= 60) intensityCategory = 'Moderada (60-84% 1RM)';
+                                    else if (percentage >= 30) intensityCategory = 'Leve (30-59% 1RM)';
+                                    else intensityCategory = 'Muito Leve (< 30% 1RM)';
                                 }
 
                                 uniqueMuscles.forEach(m => {
@@ -330,7 +351,8 @@ const RoutinesStatsModal: React.FC<RoutinesStatsModalProps> = ({ title, analyzed
 
             pdf.addImage(imgData, 'PNG', 0, 0, canvasWidth, canvasHeight);
             const filename = `Relatorio_Planejado_${title.replace(/\s+/g, '_')}.pdf`;
-            pdf.save(filename);
+            const pdfBlob = pdf.output('blob');
+            await shareFile(filename, pdfBlob, 'application/pdf');
 
         } catch (error) {
             console.error('Error generating PDF:', error);
@@ -375,7 +397,7 @@ const RoutinesStatsModal: React.FC<RoutinesStatsModalProps> = ({ title, analyzed
                          <div>
                             <h5 className="text-md font-semibold text-light-text dark:text-dark-text mb-1">Séries Planejadas por Grupo Muscular (Intensidade por 1RM)</h5>
                             <p className="text-xs text-light-text-secondary dark:text-dark-text-secondary mb-3">Apenas séries com esforço ≥ 7.</p>
-                            <HorizontalBarChart data={stats.seriesByMuscleResisted} unit="séries" />
+                            <HorizontalBarChart data={stats.seriesByMuscleResisted} unit="séries" legend={resistedLegend} verticalLegend={true} />
                         </div>
                     </section>
 
@@ -453,7 +475,7 @@ const RoutinesStatsModal: React.FC<RoutinesStatsModalProps> = ({ title, analyzed
                         </div>
                          <div>
                             <h5 className="text-md font-semibold text-light-text dark:text-dark-text mb-1">Séries Planejadas por Grupo Muscular (Intensidade por PERFLEX)</h5>
-                            <HorizontalBarChart data={stats.seriesByMuscleFlex} unit="séries" />
+                            <HorizontalBarChart data={stats.seriesByMuscleFlex} unit="séries" legend={flexibilityLegend} />
                         </div>
                     </section>
                 </div>

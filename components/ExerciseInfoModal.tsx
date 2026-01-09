@@ -89,7 +89,7 @@ const ExerciseInfoModal: React.FC<ExerciseInfoModalProps> = ({ exercise, onClose
 
                     for (const set of loggedEx.sets) {
                         const effortValue = parseEffortToNumber(set.effort);
-                        if (effortValue < 9) continue;
+                        if (effortValue < 9.5) continue;
 
                         const reps = set.reps ?? 0;
                         const originalWeight = set.value ?? 0;
@@ -318,7 +318,7 @@ const ExerciseInfoModal: React.FC<ExerciseInfoModalProps> = ({ exercise, onClose
                             ) : (
                                 <div className="text-center text-light-text-secondary dark:text-dark-text-secondary p-6 bg-light-bg dark:bg-dark-bg rounded-lg">
                                     <p>Nenhum registro de alta intensidade encontrado para este exercício.</p>
-                                    <p className="text-xs mt-2 italic">Para estimar o 1RM, registre séries com esforço (PSE/RIR) igual ou superior a 9.</p>
+                                    <p className="text-xs mt-2 italic">Para estimar o 1RM, registre séries com esforço (PSE/RIR) igual ou superior a 9.5.</p>
                                 </div>
                             )
                         ) : exercise.category === ExerciseCategory.CARDIO ? (

@@ -1,6 +1,70 @@
 
-
 import { WorkoutSet, UserMeasurements, Gender } from './types';
+import { Capacitor } from '@capacitor/core';
+import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
+
+// --- File Sharing Utility for Capacitor & Web ---
+
+const blobToBase64 = (blob: Blob): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            const base64String = reader.result as string;
+            // Remove o prefixo data:mime/type;base64, para salvar no Filesystem
+            resolve(base64String.split(',')[1]);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
+};
+
+export const shareFile = async (fileName: string, data: string | Blob, mimeType: string) => {
+    try {
+        if (Capacitor.isNativePlatform()) {
+            // Lógica para Android/iOS via Capacitor
+            let base64Data = '';
+
+            if (typeof data === 'string') {
+                // Se for string (JSON/Texto), converte para base64 seguro (UTF-8)
+                base64Data = btoa(unescape(encodeURIComponent(data)));
+            } else {
+                // Se for Blob (PDF), converte
+                base64Data = await blobToBase64(data);
+            }
+
+            // Salva o arquivo no diretório Documents para ser acessível pelo usuário/gerenciador de arquivos
+            const savedFile = await Filesystem.writeFile({
+                path: fileName,
+                data: base64Data,
+                directory: Directory.Documents,
+            });
+
+            // Abre o menu de compartilhamento nativo. 
+            // O usuário pode selecionar "Salvar em Arquivos", "Google Drive", etc.
+            await Share.share({
+                title: 'Exportar Arquivo',
+                url: savedFile.uri,
+            });
+        } else {
+            // Lógica para Web (Download via Browser)
+            const blob = typeof data === 'string' ? new Blob([data], { type: mimeType }) : data;
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+    } catch (error) {
+        console.error("Erro ao compartilhar arquivo:", error);
+        alert("Não foi possível exportar ou compartilhar o arquivo. Verifique as permissões de armazenamento.");
+    }
+};
+
+// --- Existing Helpers ---
 
 // Helper function to format total seconds into MM:SS format
 export const formatSecondsToMMSS = (totalSeconds: number | null | undefined): string => {

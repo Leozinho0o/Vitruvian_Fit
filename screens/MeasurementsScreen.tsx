@@ -1,5 +1,4 @@
 
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../App';
 import { UserMeasurements, Gender, Evaluation } from '../types';
@@ -16,7 +15,8 @@ import {
     calculateResidualWeight,
     calculateMuscleWeight,
     BodyFatResult,
-    FormulaResult
+    FormulaResult,
+    shareFile
 } from '../utils';
 
 // Accordion Section Component
@@ -269,7 +269,10 @@ const MeasurementsScreen: React.FC = () => {
             pdf.addImage(imgData, 'PNG', 0, 0, canvasWidth, canvasHeight);
             
             const dateFormatted = new Date(`${evaluationDate}T00:00:00`).toLocaleDateString('pt-BR');
-            pdf.save(`Avaliacao_Fisica_${dateFormatted.replace(/\//g, '-')}.pdf`);
+            const pdfBlob = pdf.output('blob');
+            const fileName = `Avaliacao_Fisica_${dateFormatted.replace(/\//g, '-')}.pdf`;
+            
+            await shareFile(fileName, pdfBlob, 'application/pdf');
     
         } catch (error) {
             console.error('Error generating PDF:', error);

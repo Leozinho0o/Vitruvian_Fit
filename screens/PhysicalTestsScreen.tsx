@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../App';
 import { Exercise, Unit, ExerciseCategory, WorkoutSession } from '../types';
@@ -180,7 +179,7 @@ const PhysicalTestsScreen: React.FC = () => {
                         if (pickerTarget === 'real1rm' && set.reps !== 1) continue;
                         
                         // For estimation, we only look at high effort sets
-                        if (pickerTarget === 'estimation' && effortValue < 9) continue;
+                        if (pickerTarget === 'estimation' && effortValue < 9.5) continue;
 
                         const reps = set.reps ?? 0;
                         const setWeight = set.value ?? 0;
@@ -351,7 +350,7 @@ const PhysicalTestsScreen: React.FC = () => {
                                         </div>
                                     </div>
                                     <div className="text-center text-xs text-light-text-secondary dark:text-dark-text-secondary">
-                                        *Cálculo baseado em séries com esforço (PSE/RIR) igual ou superior a 9.
+                                        *Cálculo baseado em séries com esforço (PSE/RIR) igual ou superior a 9.5.
                                     </div>
                                     <div className="h-72 pt-8 pl-4 pr-2">
                                         <BarChart data={filteredHistoryData} unit="kg" />

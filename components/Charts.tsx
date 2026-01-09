@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState } from 'react';
 
 export interface ChartData {
@@ -85,7 +86,7 @@ export const BarChart: React.FC<{ data: ChartData[]; isStacked?: boolean; unit: 
     );
 };
 
-export const HorizontalBarChart: React.FC<{ data: ChartData[]; unit: string; sortData?: boolean }> = ({ data, unit, sortData = true }) => {
+export const HorizontalBarChart: React.FC<{ data: ChartData[]; unit: string; sortData?: boolean; legend?: { label: string; color: string }[]; verticalLegend?: boolean }> = ({ data, unit, sortData = true, legend, verticalLegend = false }) => {
     if (!data || data.filter(item => item.value > 0).length === 0) {
         return (
             <div className="text-center text-light-text-secondary dark:text-dark-text-secondary mt-10 p-4 bg-light-bg dark:bg-dark-bg rounded-lg">
@@ -153,25 +154,18 @@ export const HorizontalBarChart: React.FC<{ data: ChartData[]; unit: string; sor
                     )}
                 </div>
             ))}
-            
-            {/* Legend for intensity if available (injected via name in details) */}
-            <div className="flex gap-2 mt-4 border-t border-light-border dark:border-dark-border pt-2 text-xs text-light-text-secondary dark:text-dark-text-secondary justify-center flex-wrap">
-                 <div className="flex items-center mr-3"><span className="h-3 w-3 rounded-full mr-1 bg-[#EF4444]"></span> Alta</div>
-                 <div className="flex items-center mr-3"><span className="h-3 w-3 rounded-full mr-1 bg-[#DB2777]"></span> Moderada</div>
-                 <div className="flex items-center mr-3"><span className="h-3 w-3 rounded-full mr-1 bg-[#F59E0B]"></span> Leve</div>
-                 <div className="flex items-center mr-3"><span className="h-3 w-3 rounded-full mr-1 bg-[#3B82F6]"></span> Muito Leve</div>
-            </div>
 
-            <div className="flex gap-2 mt-2 text-xs text-light-text-secondary dark:text-dark-text-secondary">
-                <div className="w-2/5" />
-                <div className="w-3/5 flex items-center">
-                    <div className="w-full flex justify-between">
-                         <span>0</span>
-                         <span>{Math.ceil(maxValue)} {unit}</span>
-                    </div>
-                    <div className="w-10 ml-3" />
+            {/* Custom Legend */}
+            {legend && legend.length > 0 && (
+                <div className={`flex gap-2 mt-4 border-t border-light-border dark:border-dark-border pt-2 text-xs text-light-text-secondary dark:text-dark-text-secondary ${verticalLegend ? 'flex-col items-start' : 'justify-center flex-wrap'}`}>
+                    {legend.map((item, idx) => (
+                        <div key={idx} className="flex items-center mr-3">
+                            <span className="h-3 w-3 rounded-full mr-2" style={{ backgroundColor: item.color }}></span>
+                            {item.label}
+                        </div>
+                    ))}
                 </div>
-            </div>
+            )}
         </div>
     );
 };
@@ -268,84 +262,88 @@ export const LineChart: React.FC<LineChartProps> = ({ datasets, labels, unit }) 
                         <line
                             x1={chartDimensions.padding.left}
                             x2={chartDimensions.width - chartDimensions.padding.right}
-                            y1={chartDimensions.padding.top + chartHeight * (1 - tick)}
-                            y2={chartDimensions.padding.top + chartHeight * (1 - tick)}
-                            className="stroke-current opacity-20"
-                            strokeWidth="1"
+                            y1={chartDimensions.padding.top + chartHeight - tick * chartHeight}
+                            y2={chartDimensions.padding.top + chartHeight - tick * chartHeight}
+                            stroke="currentColor"
+                            strokeOpacity="0.1"
                         />
                         <text
-                            x={chartDimensions.padding.left - 8}
-                            y={chartDimensions.padding.top + chartHeight * (1 - tick)}
+                            x={chartDimensions.padding.left - 10}
+                            y={chartDimensions.padding.top + chartHeight - tick * chartHeight + 4}
                             textAnchor="end"
-                            alignmentBaseline="middle"
-                            className="text-xs fill-current"
+                            fontSize="10"
+                            fill="currentColor"
                         >
-                            {Math.round(yMin + (yMax - yMin) * tick)}
+                            {(yMin + tick * (yMax - yMin)).toFixed(1)}
                         </text>
                     </g>
                 ))}
 
-                {/* X-Axis Labels */}
+                {/* X-Axis Labels (Rotated) */}
                 {labels.map((label, i) => (
                     <text
                         key={i}
                         x={xPoints[i]}
-                        y={chartDimensions.height - chartDimensions.padding.bottom + 15}
-                        textAnchor="middle"
-                        className="text-xs fill-current"
+                        y={chartDimensions.height - 10}
+                        textAnchor="end"
+                        fontSize="10"
+                        fill="currentColor"
+                        transform={`rotate(-45, ${xPoints[i]}, ${chartDimensions.height - 10})`}
                     >
                         {label}
                     </text>
                 ))}
 
-                {/* Lines and Points */}
-                {datasets.map((ds, dsIndex) => {
-                    const yData = yPoints(ds.data);
-                    return (
-                        <g key={dsIndex}>
-                            <path d={createPath(yData)} stroke={ds.color} strokeWidth="2" fill="none" />
-                            {ds.data.map((d, i) => d !== null && (
-                                <circle
-                                    key={i}
-                                    cx={xPoints[i]}
-                                    cy={yData[i]!}
-                                    r="4"
-                                    fill={ds.color}
-                                    className="cursor-pointer"
-                                    onMouseOver={(e) => handleMouseOver(e, labels[i], i)}
-                                    onMouseOut={() => setTooltip(null)}
-                                />
-                            ))}
-                        </g>
-                    );
-                })}
+                {/* Lines */}
+                {datasets.map((ds, i) => (
+                    <path
+                        key={i}
+                        d={createPath(yPoints(ds.data))}
+                        fill="none"
+                        stroke={ds.color}
+                        strokeWidth="2"
+                    />
+                ))}
+
+                {/* Points */}
+                {datasets.map((ds, dsIndex) =>
+                    yPoints(ds.data).map((y, i) => 
+                        y !== null ? (
+                            <circle
+                                key={`${dsIndex}-${i}`}
+                                cx={xPoints[i]}
+                                cy={y}
+                                r="4"
+                                fill={ds.color}
+                                className="hover:r-6 transition-all cursor-pointer"
+                                onMouseEnter={(e) => handleMouseOver(e, labels[i], i)}
+                                onMouseLeave={() => setTooltip(null)}
+                            />
+                        ) : null
+                    )
+                )}
             </svg>
+            
             {/* Tooltip */}
             {tooltip && (
-                <div
-                    className="absolute p-2 bg-dark-bg text-dark-text text-xs rounded-md shadow-lg pointer-events-none z-10"
-                    style={{ left: tooltip.x + 10, top: tooltip.y + 10 }}
+                <div 
+                    className="absolute bg-dark-bg text-dark-text text-xs p-2 rounded shadow-lg pointer-events-none z-10"
+                    style={{ 
+                        left: tooltip.x, 
+                        top: tooltip.y, 
+                        transform: 'translate(-50%, -100%)',
+                        marginTop: '-10px'
+                    }}
                 >
-                    <p className="font-bold border-b border-dark-border pb-1 mb-1">{tooltip.label}</p>
-                    <ul className="list-none space-y-1">
-                        {tooltip.data.map((item, i) => (
-                            <li key={i} className="flex items-center">
-                                <span className="h-2 w-2 rounded-full mr-2" style={{ backgroundColor: item.color }}></span>
-                                {item.label}: {item.value} {unit}
-                            </li>
-                        ))}
-                    </ul>
+                    <p className="font-bold border-b border-dark-border mb-1 pb-1">{tooltip.label}</p>
+                    {tooltip.data.map((d, i) => (
+                        <div key={i} className="flex items-center gap-2">
+                            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: d.color }}></span>
+                            <span>{d.label}: <strong>{d.value.toFixed(1)} {unit}</strong></span>
+                        </div>
+                    ))}
                 </div>
             )}
-             {/* Legend */}
-            <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 mt-4 text-sm">
-                {datasets.map((ds) => (
-                    <div key={ds.label} className="flex items-center">
-                        <span className="h-3 w-3 rounded-full mr-2" style={{ backgroundColor: ds.color }}></span>
-                        <span className="text-light-text dark:text-dark-text">{ds.label}</span>
-                    </div>
-                ))}
-            </div>
         </div>
     );
 };

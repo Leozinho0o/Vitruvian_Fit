@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useMemo, useRef } from 'react';
 import { useApp } from '../App';
 import { Exercise, ExerciseCategory, MeasurementType, Unit, PerceivedExertionScale } from '../types';
@@ -47,9 +48,9 @@ const ExerciseFormScreen: React.FC = () => {
     };
 
     const categoryOptions: CustomSelectOption[] = Object.values(ExerciseCategory).map(cat => ({
-        value: cat,
-        label: cat,
-        icon: categoryIcons[cat],
+        value: cat as string,
+        label: cat as string,
+        icon: categoryIcons[cat as ExerciseCategory],
     }));
 
     const measurementTypeOptions: CustomSelectOption[] = [
@@ -58,13 +59,13 @@ const ExerciseFormScreen: React.FC = () => {
     ];
     
     const unitOptions: CustomSelectOption[] = Object.values(Unit).map(u => ({
-        value: u,
-        label: u,
+        value: u as string,
+        label: u as string,
     }));
 
     const perceivedExertionScaleOptions: CustomSelectOption[] = Object.values(PerceivedExertionScale).map(pes => ({
-        value: pes,
-        label: pes,
+        value: pes as string,
+        label: pes as string,
     }));
 
 

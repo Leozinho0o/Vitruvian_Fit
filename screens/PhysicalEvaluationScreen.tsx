@@ -1,11 +1,10 @@
 
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../App';
 import { Evaluation } from '../types';
 import { XIcon, PlusIcon, ClipboardListIcon, ChevronDownIcon } from '../components/Icons';
 import CustomSelect, { CustomSelectOption } from '../components/CustomSelect';
-import { calculateAllBodyComposition, BodyFatAuthor } from '../utils';
+import { calculateAllBodyComposition, BodyFatAuthor, shareFile } from '../utils';
 import { LineChart, LineChartDataset } from '../components/Charts';
 
 

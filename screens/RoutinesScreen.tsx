@@ -1,14 +1,16 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useApp } from '../App';
-import { Routine, Folder, Exercise, ExerciseCategory, PlannedExercise, WorkoutSet, MeasurementType, Unit, PerceivedExertionScale } from '../types';
-import { FolderIcon, PlusIcon, PencilIcon, TrashIcon, XIcon, ChevronRightIcon, PlayIcon, CheckCircleIcon, CopyIcon, SearchIcon, InfoIcon, DumbbellIcon, GripVerticalIcon, ChevronDownIcon, HeartPulseIcon, StretchIcon } from '../components/Icons';
+import { Routine, Folder, Exercise, PlannedExercise, WorkoutSet, MeasurementType, Unit, ExerciseCategory, SetType, CardioMethod, FlexibilityMethod } from '../types';
+import { FolderIcon, PlusIcon, PencilIcon, TrashIcon, XIcon, PlayIcon, CopyIcon, SearchIcon, InfoIcon, DumbbellIcon, HeartPulseIcon, StretchIcon, ChevronDownIcon, GripVerticalIcon, ChevronUpIcon } from '../components/Icons';
 import { ROUTINE_COLORS, getScaleOptions } from '../constants';
 import ConfirmationModal from '../components/ConfirmationModal';
-import { formatSecondsToMMSS, parseTimeToSeconds, vibrate } from '../utils';
+import { formatSecondsToMMSS, parseTimeToSeconds } from '../utils';
 import RoutinesStatsModal from '../components/RoutinesStatsModal';
 import ExerciseInfoModal from '../components/ExerciseInfoModal';
-import CustomSelect, { CustomSelectOption } from '../components/CustomSelect';
+import CustomSelect from '../components/CustomSelect';
 import EffortPicker from '../components/EffortPicker';
+import MethodPicker from '../components/MethodPicker';
 
 // Time Input Component for better UX
 interface TimeInputProps {
@@ -54,34 +56,26 @@ const TimeInput: React.FC<TimeInputProps> = ({ id, valueInSeconds, onChangeInSec
     );
 };
 
-// Ghost Item for Touch Dragging
-interface GhostElementProps {
-  content: React.ReactNode;
-  x: number;
-  y: number;
+// Drag Types
+type DragItemType = 'routine' | 'folder';
+interface DragItem {
+    id: string;
+    type: DragItemType;
 }
-const GhostItem: React.FC<GhostElementProps> = ({ content, x, y }) => {
-    if (!content) return null;
-    return (
-        <div
-            className="fixed p-2 rounded-lg z-[9999] pointer-events-none opacity-80 shadow-2xl bg-light-card dark:bg-dark-card"
-            style={{
-                left: `${x}px`,
-                top: `${y}px`,
-                transform: 'translate(-50%, -50%)',
-                minWidth: '250px',
-            }}
-        >
-            {content}
-        </div>
-    );
-};
-
-interface DraggingItem { type: 'routine' | 'folder'; id: string; source: { folderId: string | null; }; }
+interface DragOverState {
+    targetId: string;
+    position: 'top' | 'bottom' | 'inside';
+}
 
 // Main Component
 const RoutinesScreen = () => {
-    const { routines, folders, exercises, addRoutine, updateRoutine, deleteRoutine, duplicateRoutine, addFolder, updateFolder, deleteFolder, moveRoutineToFolder, startWorkoutFromRoutine, reorderRoutines, reorderFolders, evaluations } = useApp();
+    const { 
+        routines, folders, exercises, 
+        addRoutine, updateRoutine, deleteRoutine, duplicateRoutine, 
+        addFolder, updateFolder, deleteFolder, 
+        reorderRoutines, reorderFolders, moveRoutineToFolder, moveFolderToFolder,
+        startWorkoutFromRoutine, evaluations 
+    } = useApp();
 
     const [isRoutineModalOpen, setIsRoutineModalOpen] = useState(false);
     const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
@@ -89,7 +83,7 @@ const RoutinesScreen = () => {
     const [editingFolder, setEditingFolder] = useState<Folder | null>(null);
     const [isAddOptionsOpen, setIsAddOptionsOpen] = useState(false);
     
-    // State for statistics modal (either folder or routine)
+    // State for statistics modal
     const [statsInfo, setStatsInfo] = useState<{ title: string; routines: Routine[] } | null>(null);
     
     const [confirmDeleteRoutineInfo, setConfirmDeleteRoutineInfo] = useState<{ id: string; name: string } | null>(null);
@@ -97,71 +91,14 @@ const RoutinesScreen = () => {
     
     const [searchQuery, setSearchQuery] = useState('');
 
-    const addOptionsRef = useRef<HTMLDivElement>(null);
-
     // Drag and Drop State
-    const [draggingItem, setDraggingItem] = useState<DraggingItem | null>(null);
-    const [dropTarget, setDropTarget] = useState<{ type: 'folder' | 'routine' | 'root'; id: string | null } | null>(null);
-    const [dropIndicator, setDropIndicator] = useState<{ targetId: string; type: 'routine' | 'folder'; position: 'top' | 'bottom' } | null>(null);
-
-    // Touch Drag State
-    const [ghostElement, setGhostElement] = useState<GhostElementProps | null>(null);
-    const dragTimeoutRef = useRef<number | null>(null);
-    const dragStartInfo = useRef<{ x: number, y: number, item: DraggingItem, element: HTMLElement } | null>(null);
-    const [isTouchDevice, setIsTouchDevice] = useState(false);
+    const [dragItem, setDragItem] = useState<DragItem | null>(null);
+    const [dragOverState, setDragOverState] = useState<DragOverState | null>(null);
     
-    // Auto-scroll refs and logic
+    // Ref for Auto-Scrolling
     const scrollContainerRef = useRef<HTMLDivElement>(null);
-    const scrollIntervalRef = useRef<number | null>(null);
-    const scrollDirectionRef = useRef<'up' | 'down' | null>(null);
-    const lastClientY = useRef<number>(0);
 
-    const stopScrolling = () => {
-        if (scrollIntervalRef.current) {
-            cancelAnimationFrame(scrollIntervalRef.current);
-            scrollIntervalRef.current = null;
-        }
-        scrollDirectionRef.current = null;
-    };
-
-    const scrollLoop = () => {
-        if (scrollDirectionRef.current && scrollContainerRef.current) {
-            const container = scrollContainerRef.current;
-            const rect = container.getBoundingClientRect();
-            
-            const hotZoneHeight = 60;
-            const maxSpeed = 15;
-            const minSpeed = 1;
-
-            let speed = 0;
-            const y = lastClientY.current - rect.top;
-
-            if (scrollDirectionRef.current === 'up') {
-                const proximity = (hotZoneHeight - y) / hotZoneHeight;
-                if (proximity > 0) {
-                   const additionalSpeed = (maxSpeed - minSpeed) * Math.pow(proximity, 3);
-                   speed = -(minSpeed + additionalSpeed);
-                }
-            } else if (scrollDirectionRef.current === 'down') {
-                const proximity = (y - (rect.height - hotZoneHeight)) / hotZoneHeight;
-                if (proximity > 0) {
-                    const additionalSpeed = (maxSpeed - minSpeed) * Math.pow(proximity, 2);
-                    speed = minSpeed + additionalSpeed;
-                }
-            }
-
-            if (speed !== 0) {
-                container.scrollTop += speed;
-                scrollIntervalRef.current = requestAnimationFrame(scrollLoop);
-            } else {
-                stopScrolling();
-            }
-        }
-    };
-    
-    useEffect(() => {
-        setIsTouchDevice('ontouchstart' in window || navigator.maxTouchPoints > 0);
-    }, []);
+    const addOptionsRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -175,9 +112,9 @@ const RoutinesScreen = () => {
         };
     }, [isAddOptionsOpen]);
 
-    const { finalFolders, finalRoutines } = useMemo(() => {
+    const { finalFolders, finalRoutines, isSearching } = useMemo(() => {
         const query = searchQuery.toLowerCase().trim();
-        if (!query) return { finalFolders: folders, finalRoutines: routines };
+        if (!query) return { finalFolders: folders, finalRoutines: routines, isSearching: false };
         
         const matchingRoutines = routines.filter(r => r.name.toLowerCase().includes(query));
         const matchingFolders = folders.filter(f => f.name.toLowerCase().includes(query));
@@ -191,9 +128,10 @@ const RoutinesScreen = () => {
         const routinesInMatchingFolders = routines.filter(r => r.folderId && matchingFolderIds.has(r.folderId));
         const finalRoutines = [...new Map([...matchingRoutines, ...routinesInMatchingFolders].map(r => [r.id, r])).values()];
 
-        return { finalFolders, finalRoutines };
+        return { finalFolders, finalRoutines, isSearching: true };
     }, [searchQuery, routines, folders]);
 
+    // Data maps for hierarchical display
     const routinesByFolder = useMemo(() => {
         const map = new Map<string, Routine[]>();
         finalRoutines.forEach((routine: Routine) => {
@@ -204,9 +142,161 @@ const RoutinesScreen = () => {
         return map;
     }, [finalRoutines]);
 
-    const rootRoutines = routinesByFolder.get('root') || [];
+    const foldersByParent = useMemo(() => {
+        const map = new Map<string, Folder[]>();
+        finalFolders.forEach((folder: Folder) => {
+            const parentId = folder.parentId || 'root';
+            if (!map.has(parentId)) map.set(parentId, []);
+            map.get(parentId)?.push(folder);
+        });
+        return map;
+    }, [finalFolders]);
+
+    const rootRoutines = isSearching ? finalRoutines.filter(r => !finalFolders.find(f => f.id === r.folderId)) : (routinesByFolder.get('root') || []);
+    const rootFolders = isSearching ? finalFolders : (foldersByParent.get('root') || []);
+
     const hasOriginalContent = routines.length > 0 || folders.length > 0;
-    const hasSearchResults = finalFolders.length > 0 || rootRoutines.length > 0;
+    const hasSearchResults = finalFolders.length > 0 || finalRoutines.length > 0;
+
+    // --- Drag and Drop Handlers ---
+
+    const handleAutoScroll = (clientY: number) => {
+        const container = scrollContainerRef.current;
+        if (!container) return;
+
+        const { top, bottom } = container.getBoundingClientRect();
+        const threshold = 100; // Distance from edge to trigger scroll
+        const speed = 15; // Scroll speed per frame/event
+
+        if (clientY < top + threshold) {
+            // Scroll Up
+            container.scrollTop -= speed;
+        } else if (clientY > bottom - threshold) {
+            // Scroll Down
+            container.scrollTop += speed;
+        }
+    };
+
+    const handleDragStart = (e: React.DragEvent, id: string, type: DragItemType) => {
+        e.stopPropagation();
+        setDragItem({ id, type });
+        // Set drag image or data if needed, mostly handled by state
+        e.dataTransfer.effectAllowed = 'move';
+        // Add a small delay to visual updates to avoid flickering
+        setTimeout(() => {
+            const el = e.target as HTMLElement;
+            el.style.opacity = '0.5';
+        }, 0);
+    };
+
+    const handleDragEnd = (e: React.DragEvent) => {
+        const el = e.target as HTMLElement;
+        el.style.opacity = '1';
+        setDragItem(null);
+        setDragOverState(null);
+    };
+
+    const handleDragOver = useCallback((e: React.DragEvent, targetId: string, targetType: DragItemType, isTargetFolder: boolean) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        // Trigger Auto Scroll
+        handleAutoScroll(e.clientY);
+
+        if (!dragItem || dragItem.id === targetId) return;
+
+        // Prevent dragging a folder into itself or its children (simplified check)
+        if (dragItem.type === 'folder' && targetType === 'folder' && dragItem.id === targetId) return;
+
+        const rect = e.currentTarget.getBoundingClientRect();
+        const y = e.clientY - rect.top;
+        const height = rect.height;
+
+        let position: 'top' | 'bottom' | 'inside';
+
+        if (isTargetFolder) {
+            // Folders have an "inside" zone in the middle 50%
+            if (y < height * 0.25) position = 'top';
+            else if (y > height * 0.75) position = 'bottom';
+            else position = 'inside';
+        } else {
+            // Routines only have top/bottom reordering
+            if (y < height * 0.5) position = 'top';
+            else position = 'bottom';
+        }
+
+        // Prevent dragging routine inside routine (impossible) or folder inside routine (impossible)
+        if (position === 'inside' && !isTargetFolder) return;
+
+        setDragOverState({ targetId, position });
+    }, [dragItem]);
+
+    const handleDragLeave = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        // Only clear if we are leaving the item completely, logic can be tricky with children
+        // Usually handled by the next DragOver taking precedence
+    };
+
+    const handleDrop = useCallback((e: React.DragEvent, targetId: string, targetType: DragItemType, isTargetFolder: boolean) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (!dragItem || !dragOverState) {
+            setDragItem(null);
+            setDragOverState(null);
+            return;
+        }
+
+        const { id: draggedId, type: draggedType } = dragItem;
+        const { position } = dragOverState;
+
+        // Logic for Dropping
+        if (draggedType === 'routine') {
+            if (position === 'inside' && isTargetFolder) {
+                // Move Routine Into Folder
+                moveRoutineToFolder(draggedId, targetId);
+            } else {
+                // Reorder Routine (peer to peer or changing folder context)
+                // If dropped relative to a folder (top/bottom), it stays in the folder's parent
+                // If dropped relative to a routine, it adopts that routine's folder
+                reorderRoutines(draggedId, targetId, position === 'top' ? 'top' : 'bottom');
+            }
+        } else if (draggedType === 'folder') {
+            if (position === 'inside' && isTargetFolder) {
+                // Move Folder Into Folder (Nesting)
+                if (draggedId !== targetId) {
+                    moveFolderToFolder(draggedId, targetId);
+                }
+            } else {
+                // Reorder Folder
+                reorderFolders(draggedId, targetId, position === 'top' ? 'top' : 'bottom');
+            }
+        }
+
+        // Reset Styles
+        const el = document.getElementById(targetId); // Assuming we put ID on element
+        if(el) el.style.boxShadow = 'none';
+
+        setDragItem(null);
+        setDragOverState(null);
+    }, [dragItem, dragOverState, moveRoutineToFolder, reorderRoutines, moveFolderToFolder, reorderFolders]);
+
+    const handleRootDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        if (!dragItem) return;
+        
+        // If dropped in the empty space of the root container, move to root
+        if (dragItem.type === 'routine') {
+            moveRoutineToFolder(dragItem.id, null);
+        } else if (dragItem.type === 'folder') {
+            moveFolderToFolder(dragItem.id, null);
+        }
+        setDragItem(null);
+        setDragOverState(null);
+    };
+
+    // --- End Drag and Drop Handlers ---
 
     const handleConfirmDeleteRoutine = () => {
         if (confirmDeleteRoutineInfo) {
@@ -232,176 +322,56 @@ const RoutinesScreen = () => {
         setIsAddOptionsOpen(false);
     }
 
-    // --- Drag and Drop Handlers ---
-    const handleDragStart = (e: React.DragEvent, item: DraggingItem) => {
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', item.id);
-        setDraggingItem(item);
-    };
-
-    const handleDragOver = (e: React.DragEvent) => {
-        e.preventDefault();
-        if (!draggingItem) return;
-
-        lastClientY.current = e.clientY;
-        if (scrollContainerRef.current) {
-            const container = scrollContainerRef.current;
-            const rect = container.getBoundingClientRect();
-            const y = e.clientY - rect.top;
-            const hotZoneHeight = 60;
-
-            if (y < hotZoneHeight) {
-                if (scrollDirectionRef.current !== 'up') {
-                    stopScrolling();
-                    scrollDirectionRef.current = 'up';
-                    scrollIntervalRef.current = requestAnimationFrame(scrollLoop);
-                }
-            } else if (y > rect.height - hotZoneHeight) {
-                if (scrollDirectionRef.current !== 'down') {
-                    stopScrolling();
-                    scrollDirectionRef.current = 'down';
-                    scrollIntervalRef.current = requestAnimationFrame(scrollLoop);
-                }
-            } else {
-                stopScrolling();
-            }
-        }
+    const getAllRoutinesInFolderRecursive = useCallback((folderId: string): Routine[] => {
+        const directRoutines = routines.filter(r => r.folderId === folderId);
+        const subFolders = folders.filter(f => f.parentId === folderId);
         
-        const targetElement = (e.target as HTMLElement).closest('[data-drag-id]');
-        const targetFolderElement = (e.target as HTMLElement).closest('[data-folder-id]');
-        
-        if (targetElement) {
-            const targetId = targetElement.getAttribute('data-drag-id')!;
-            const targetType = targetElement.getAttribute('data-drag-type')! as 'routine' | 'folder';
-            const targetRect = targetElement.getBoundingClientRect();
-            const midpointY = targetRect.top + targetRect.height / 2;
-            const position = e.clientY < midpointY ? 'top' : 'bottom';
-            setDropIndicator({ type: targetType, targetId, position });
-            setDropTarget(null);
-        } else if (targetFolderElement && draggingItem.type === 'routine') {
-            const folderId = targetFolderElement.getAttribute('data-folder-id')!;
-            setDropTarget({ type: 'folder', id: folderId });
-            setDropIndicator(null);
-        } else {
-             setDropTarget({ type: 'root', id: null });
-             setDropIndicator(null);
-        }
-    };
+        let allRoutines = [...directRoutines];
+        subFolders.forEach(sub => {
+            allRoutines = [...allRoutines, ...getAllRoutinesInFolderRecursive(sub.id)];
+        });
+        return allRoutines;
+    }, [routines, folders]);
 
-    const handleDragEnd = () => {
-        stopScrolling();
-        setDraggingItem(null);
-        setDropTarget(null);
-        setDropIndicator(null);
-    };
-    
-    const handleItemDrop = (e: React.DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (draggingItem && dropIndicator) {
-            const { type: draggedType, id: draggedId } = draggingItem;
-            const { type: targetType, targetId, position } = dropIndicator;
-            if (draggedType === targetType && draggedId !== targetId) {
-                if (draggedType === 'routine') reorderRoutines(draggedId, targetId, position);
-                else if (draggedType === 'folder') reorderFolders(draggedId, targetId, position);
-            }
-        }
-        handleDragEnd();
-    };
-
-    const handleFolderDrop = (e: React.DragEvent, target: {type: 'folder' | 'root', id: string | null}) => {
-        e.preventDefault();
-        if (draggingItem?.type === 'routine' && draggingItem.source.folderId !== target.id) {
-            moveRoutineToFolder(draggingItem.id, target.id);
-        }
-        handleDragEnd();
-    };
-
-    const handleTouchStart = (e: React.TouchEvent, item: DraggingItem, element: HTMLElement) => {
-        if (e.touches.length > 1) return;
-        dragStartInfo.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, item, element };
-        if (dragTimeoutRef.current) clearTimeout(dragTimeoutRef.current);
-        dragTimeoutRef.current = window.setTimeout(() => {
-            if (!dragStartInfo.current) return;
-            setDraggingItem(item);
-            const clone = dragStartInfo.current.element.cloneNode(true) as HTMLElement;
-            clone.style.width = `${dragStartInfo.current.element.offsetWidth}px`;
-            setGhostElement({ content: <div dangerouslySetInnerHTML={{ __html: clone.outerHTML }} />, x: dragStartInfo.current.x, y: dragStartInfo.current.y });
-            vibrate(50);
-            dragTimeoutRef.current = null;
-        }, 300);
-    };
-
-    const handleTouchMove = (e: React.TouchEvent) => {
-        if (!dragStartInfo.current) return;
-        if (!draggingItem) {
-             if (dragTimeoutRef.current) {
-                const touch = e.touches[0];
-                const dx = Math.abs(touch.clientX - dragStartInfo.current.x);
-                const dy = Math.abs(touch.clientY - dragStartInfo.current.y);
-                if (dx > 10 || dy > 10) {
-                    clearTimeout(dragTimeoutRef.current);
-                    dragTimeoutRef.current = null;
-                    dragStartInfo.current = null;
-                }
-            }
-            return;
-        }
-        if (e.cancelable) e.preventDefault();
-        const touch = e.touches[0];
-        lastClientY.current = touch.clientY;
-        setGhostElement(g => g ? { ...g, x: touch.clientX, y: touch.clientY } : null);
-        const ghostDOMElement = document.querySelector('.fixed.z-\\[9999\\]');
-        if (ghostDOMElement) (ghostDOMElement as HTMLElement).style.display = 'none';
-        const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
-        if (ghostDOMElement) (ghostDOMElement as HTMLElement).style.display = 'block';
-        const dropTargetItem = targetElement?.closest('[data-drag-id]');
-        const dropTargetFolder = targetElement?.closest('[data-folder-id]');
-        if (dropTargetItem) {
-            const targetId = dropTargetItem.getAttribute('data-drag-id')!;
-            const targetType = dropTargetItem.getAttribute('data-drag-type')! as 'routine' | 'folder';
-            const targetRect = dropTargetItem.getBoundingClientRect();
-            const midpointY = targetRect.top + targetRect.height / 2;
-            const position = touch.clientY < midpointY ? 'top' : 'bottom';
-            setDropIndicator({ type: targetType, targetId, position });
-            setDropTarget(null);
-        } else if (dropTargetFolder && draggingItem.type === 'routine') {
-            const folderId = dropTargetFolder.getAttribute('data-folder-id')!;
-            setDropTarget({ type: 'folder', id: folderId });
-            setDropIndicator(null);
-        } else {
-            setDropTarget({ type: 'root', id: null });
-            setDropIndicator(null);
-        }
-    };
-
-    const handleTouchEnd = () => {
-        if (dragTimeoutRef.current) {
-            clearTimeout(dragTimeoutRef.current);
-            dragTimeoutRef.current = null;
-        }
-        if (draggingItem && dropIndicator) {
-            const { type: draggedType, id: draggedId } = draggingItem;
-            const { type: targetType, targetId, position } = dropIndicator;
-            if (draggedType === targetType && draggedId !== targetId) {
-                if (draggedType === 'routine') reorderRoutines(draggedId, targetId, position);
-                else if (draggedType === 'folder') reorderFolders(draggedId, targetId, position);
-            }
-        } else if (draggingItem?.type === 'routine' && dropTarget) {
-            if (dropTarget.type === 'folder') moveRoutineToFolder(draggingItem.id, dropTarget.id);
-            else if (dropTarget.type === 'root') moveRoutineToFolder(draggingItem.id, null);
-        }
-        stopScrolling();
-        setDraggingItem(null);
-        setDropTarget(null);
-        setDropIndicator(null);
-        setGhostElement(null);
-        dragStartInfo.current = null;
+    // Shared props for recursive FolderItems
+    const sharedProps = {
+        onEditRoutine: (e: React.MouseEvent, r: Routine) => { e.stopPropagation(); setEditingRoutine(r); setIsRoutineModalOpen(true); },
+        onDeleteRoutine: (e: React.MouseEvent, r: Routine) => { e.stopPropagation(); setConfirmDeleteRoutineInfo({ id: r.id, name: r.name }); },
+        onDuplicateRoutine: (e: React.MouseEvent, rid: string) => { e.stopPropagation(); duplicateRoutine(rid); },
+        onStartWorkout: (e: React.MouseEvent, rid: string) => { e.stopPropagation(); startWorkoutFromRoutine(rid); },
+        onEditFolder: (e: React.MouseEvent, f: Folder) => { e.stopPropagation(); setEditingFolder(f); setIsFolderModalOpen(true); },
+        onDeleteFolder: (e: React.MouseEvent, f: Folder) => { e.stopPropagation(); setConfirmDeleteFolderInfo({ id: f.id, name: f.name }); },
+        onShowFolderStats: (e: React.MouseEvent, f: Folder) => { 
+            e.stopPropagation(); 
+            const allRoutines = getAllRoutinesInFolderRecursive(f.id);
+            setStatsInfo({ title: `Estatísticas: ${f.name}`, routines: allRoutines }); 
+        },
+        onShowRoutineStats: (e: React.MouseEvent, r: Routine) => { e.stopPropagation(); setStatsInfo({ title: `Estatísticas Planejadas: ${r.name}`, routines: [r] }); },
+        foldersByParent,
+        routinesByFolder,
+        // DnD Props
+        handleDragStart,
+        handleDragEnd,
+        handleDragOver,
+        handleDrop,
+        dragOverState,
+        dragItem
     };
 
     return (
-        <div ref={scrollContainerRef} className="relative h-full overflow-y-auto" onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd} onTouchCancel={handleTouchEnd} onDragOver={handleDragOver} onDragLeave={stopScrolling} onDrop={(e) => handleFolderDrop(e, {type: 'root', id: null})}>
-            <div className="p-4 lg:p-6 space-y-4 pb-40">
+        <div 
+            ref={scrollContainerRef}
+            className="relative h-full overflow-y-auto" 
+            onDragOver={(e) => { 
+                e.preventDefault(); 
+                handleAutoScroll(e.clientY); 
+            }} // Allow dropping on main area and scroll
+            onDrop={(e) => {
+                // If drop happens here (and not stopped by a child), it means dropped on root empty space
+                if(e.target === e.currentTarget) handleRootDrop(e);
+            }}
+        >
+            <div className="p-4 lg:p-6 space-y-4 pb-40 min-h-full">
                 <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
                     <div className="relative flex-grow">
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -426,25 +396,46 @@ const RoutinesScreen = () => {
                     </div>
                 </div>
 
-                {finalFolders.map((folder: Folder) => (
-                    <React.Fragment key={folder.id}>
-                        {dropIndicator?.targetId === folder.id && dropIndicator.type === 'folder' && dropIndicator.position === 'top' && <div className="h-1.5 bg-secondary rounded-full my-1"></div>}
-                        <FolderItem folder={folder} routines={routinesByFolder.get(folder.id) || []} onEditRoutine={(e, routine) => { e.stopPropagation(); setEditingRoutine(routine); setIsRoutineModalOpen(true); }} onDeleteRoutine={(e, routine) => { e.stopPropagation(); setConfirmDeleteRoutineInfo({ id: routine.id, name: routine.name }); }} onDuplicateRoutine={(e, routineId) => { e.stopPropagation(); duplicateRoutine(routineId); }} onStartWorkout={(e, routineId) => { e.stopPropagation(); startWorkoutFromRoutine(routineId); }} onEditFolder={(e) => { e.stopPropagation(); setEditingFolder(folder); setIsFolderModalOpen(true); }} onDeleteFolder={(e) => { e.stopPropagation(); setConfirmDeleteFolderInfo({ id: folder.id, name: folder.name }); }} onShowStats={(e) => { e.stopPropagation(); setStatsInfo({ title: `Estatísticas Planejadas: ${folder.name}`, routines: (routinesByFolder.get(folder.id) || []) }); }} isDropTarget={dropTarget?.type === 'folder' && dropTarget.id === folder.id} draggingItem={draggingItem} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onTouchStart={handleTouchStart} onFolderDrop={handleFolderDrop} onItemDrop={handleItemDrop} isTouchDevice={isTouchDevice} dropIndicator={dropIndicator} onShowRoutineStats={(e, routine) => { e.stopPropagation(); setStatsInfo({ title: `Estatísticas Planejadas: ${routine.name}`, routines: [routine] }); }} />
-                        {dropIndicator?.targetId === folder.id && dropIndicator.type === 'folder' && dropIndicator.position === 'bottom' && <div className="h-1.5 bg-secondary rounded-full my-1"></div>}
-                    </React.Fragment>
+                {rootFolders.map((folder: Folder) => (
+                    <FolderItem 
+                        key={folder.id}
+                        {...sharedProps}
+                        folder={folder} 
+                        subFolders={isSearching ? [] : (foldersByParent.get(folder.id) || [])}
+                        routines={routinesByFolder.get(folder.id) || []} 
+                    />
                 ))}
                 {rootRoutines.map((routine: Routine) => (
-                    <React.Fragment key={routine.id}>
-                        {dropIndicator?.targetId === routine.id && dropIndicator.type === 'routine' && dropIndicator.position === 'top' && <div className="h-1.5 bg-secondary rounded-full my-1"></div>}
-                        <RoutineItem routine={routine} onEdit={(e) => { e.stopPropagation(); setEditingRoutine(routine); setIsRoutineModalOpen(true); }} onDelete={(e) => { e.stopPropagation(); setConfirmDeleteRoutineInfo({ id: routine.id, name: routine.name }); }} onDuplicate={(e) => { e.stopPropagation(); duplicateRoutine(routine.id); }} onStartWorkout={(e) => { e.stopPropagation(); startWorkoutFromRoutine(routine.id); }} onDragStart={(e) => handleDragStart(e, {type: 'routine', id: routine.id, source: { folderId: routine.folderId }})} onDragEnd={handleDragEnd} onDrop={handleItemDrop} onTouchStart={handleTouchStart} isDragging={draggingItem?.type === 'routine' && draggingItem.id === routine.id} isTouchDevice={isTouchDevice} dropIndicator={dropIndicator} onShowStats={(e) => { e.stopPropagation(); setStatsInfo({ title: `Estatísticas Planejadas: ${routine.name}`, routines: [routine] }); }} />
-                        {dropIndicator?.targetId === routine.id && dropIndicator.type === 'routine' && dropIndicator.position === 'bottom' && <div className="h-1.5 bg-secondary rounded-full my-1"></div>}
-                    </React.Fragment>
+                    <RoutineItem 
+                        key={routine.id}
+                        routine={routine} 
+                        onEdit={(e) => { e.stopPropagation(); setEditingRoutine(routine); setIsRoutineModalOpen(true); }} 
+                        onDelete={(e) => { e.stopPropagation(); setConfirmDeleteRoutineInfo({ id: routine.id, name: routine.name }); }} 
+                        onDuplicate={(e) => { e.stopPropagation(); duplicateRoutine(routine.id); }} 
+                        onStartWorkout={(e) => { e.stopPropagation(); startWorkoutFromRoutine(routine.id); }} 
+                        onShowStats={(e) => { e.stopPropagation(); setStatsInfo({ title: `Estatísticas Planejadas: ${routine.name}`, routines: [routine] }); }}
+                        // DnD Props
+                        handleDragStart={handleDragStart}
+                        handleDragEnd={handleDragEnd}
+                        handleDragOver={handleDragOver}
+                        handleDrop={handleDrop}
+                        dragOverState={dragOverState}
+                    />
                 ))}
                 {searchQuery === '' && !hasOriginalContent && <div className="text-center text-light-text-secondary dark:text-dark-text-secondary mt-10"><p>Nenhuma rotina ou pasta criada.</p><p>Clique no botão '+' para começar.</p></div>}
                 {searchQuery !== '' && !hasSearchResults && <div className="text-center text-light-text-secondary dark:text-dark-text-secondary mt-10"><p>Nenhum resultado encontrado para "{searchQuery}".</p></div>}
+                
+                {/* Drop Zone for moving to Root (visible when dragging) */}
+                {dragItem && (
+                    <div 
+                        className="h-20 border-2 border-dashed border-light-border dark:border-dark-border rounded-lg flex items-center justify-center text-light-text-secondary dark:text-dark-text-secondary mt-4 transition-colors hover:bg-primary/10 hover:border-primary"
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={handleRootDrop}
+                    >
+                        Soltar aqui para mover para a Raiz
+                    </div>
+                )}
             </div>
-
-            {ghostElement && <GhostItem {...ghostElement} />}
 
             <div className="fixed bottom-36 right-6 z-20 lg:hidden" ref={addOptionsRef}>
                 <div className="flex flex-col items-end">
@@ -479,7 +470,17 @@ const RoutinesScreen = () => {
                 allFolders={folders} 
               />
             )}
-            {isFolderModalOpen && <FolderFormModal onClose={() => setIsFolderModalOpen(false)} onSave={(data) => { if(editingFolder) updateFolder({ ...data, id: editingFolder.id, parentId: null } as Folder); else addFolder({ ...data, parentId: null } as Omit<Folder, 'id'>); setIsFolderModalOpen(false); }} folderToEdit={editingFolder} />}
+            {isFolderModalOpen && (
+                <FolderFormModal 
+                    onClose={() => setIsFolderModalOpen(false)} 
+                    onSave={(data) => { 
+                        if(editingFolder) updateFolder({ ...data, id: editingFolder.id, parentId: editingFolder.parentId } as Folder); 
+                        else addFolder({ ...data, parentId: null } as Omit<Folder, 'id'>); 
+                        setIsFolderModalOpen(false); 
+                    }} 
+                    folderToEdit={editingFolder} 
+                />
+            )}
             {statsInfo && <RoutinesStatsModal title={statsInfo.title} analyzedRoutines={statsInfo.routines} exercises={exercises} evaluations={evaluations} onClose={() => setStatsInfo(null)} />}
             {confirmDeleteRoutineInfo && <ConfirmationModal isOpen={!!confirmDeleteRoutineInfo} onClose={() => setConfirmDeleteRoutineInfo(null)} onConfirm={handleConfirmDeleteRoutine} title="Confirmar Exclusão" message={<>Tem certeza que deseja apagar a rotina <strong>"{confirmDeleteRoutineInfo.name}"</strong>? Esta ação não pode ser desfeita.</>} />}
             {confirmDeleteFolderInfo && <ConfirmationModal isOpen={!!confirmDeleteFolderInfo} onClose={() => setConfirmDeleteFolderInfo(null)} onConfirm={handleConfirmDeleteFolder} title="Confirmar Exclusão" message={<><p>Tem certeza que deseja apagar a pasta <strong>"{confirmDeleteFolderInfo.name}"</strong>?</p><p className="mt-2 text-sm text-light-text-secondary dark:text-dark-text-secondary">As rotinas dentro dela não serão apagadas, mas movidas para fora da pasta.</p></>} />}
@@ -489,60 +490,108 @@ const RoutinesScreen = () => {
 
 interface FolderItemProps {
     folder: Folder;
+    subFolders: Folder[];
     routines: Routine[];
     onEditRoutine: (e: React.MouseEvent, routine: Routine) => void;
     onDeleteRoutine: (e: React.MouseEvent, routine: Routine) => void;
     onDuplicateRoutine: (e: React.MouseEvent, routineId: string) => void;
     onStartWorkout: (e: React.MouseEvent, routineId: string) => void;
-    onEditFolder: (e: React.MouseEvent) => void;
-    onDeleteFolder: (e: React.MouseEvent) => void;
-    onShowStats: (e: React.MouseEvent) => void;
-    isDropTarget: boolean;
-    draggingItem: DraggingItem | null;
-    onDragStart: (e: React.DragEvent, item: DraggingItem) => void;
-    onDragEnd: () => void;
-    onTouchStart: (e: React.TouchEvent, item: DraggingItem, element: HTMLElement) => void;
-    onFolderDrop: (e: React.DragEvent, target: {type: 'folder' | 'root', id: string | null}) => void;
-    onItemDrop: (e: React.DragEvent) => void;
-    isTouchDevice: boolean;
-    dropIndicator: { targetId: string; type: string; position: 'top' | 'bottom' } | null;
+    onEditFolder: (e: React.MouseEvent, f: Folder) => void;
+    onDeleteFolder: (e: React.MouseEvent, f: Folder) => void;
+    onShowFolderStats: (e: React.MouseEvent, f: Folder) => void;
     onShowRoutineStats: (e: React.MouseEvent, routine: Routine) => void;
+    foldersByParent: Map<string, Folder[]>;
+    routinesByFolder: Map<string, Routine[]>;
+    // DnD
+    handleDragStart: (e: React.DragEvent, id: string, type: DragItemType) => void;
+    handleDragEnd: (e: React.DragEvent) => void;
+    handleDragOver: (e: React.DragEvent, targetId: string, type: DragItemType, isFolder: boolean) => void;
+    handleDrop: (e: React.DragEvent, targetId: string, type: DragItemType, isFolder: boolean) => void;
+    dragOverState: DragOverState | null;
+    dragItem: DragItem | null;
 }
 
-const FolderItem = ({ folder, routines, onEditRoutine, onDeleteRoutine, onDuplicateRoutine, onStartWorkout, onEditFolder, onDeleteFolder, onShowStats, isDropTarget, draggingItem, onDragStart, onDragEnd, onTouchStart, onFolderDrop, onItemDrop, isTouchDevice, dropIndicator, onShowRoutineStats }: FolderItemProps) => {
+const FolderItem: React.FC<FolderItemProps> = (props) => {
+    const { 
+        folder, subFolders, routines, 
+        onEditRoutine, onDeleteRoutine, onDuplicateRoutine, onStartWorkout, onEditFolder, onDeleteFolder, onShowFolderStats, onShowRoutineStats, foldersByParent, routinesByFolder,
+        handleDragStart, handleDragEnd, handleDragOver, handleDrop, dragOverState, dragItem
+    } = props;
+    
     const [isExpanded, setIsExpanded] = useState(false);
-    const folderRef = useRef<HTMLDivElement>(null);
-    const folderHeaderRef = useRef<HTMLDivElement>(null);
-    const isDraggingThis = draggingItem?.type === 'folder' && draggingItem.id === folder.id;
+
+    const isDragTarget = dragOverState?.targetId === folder.id;
+    const dragPosition = isDragTarget ? dragOverState?.position : null;
+
+    const folderStyle = isDragTarget ? 
+        (dragPosition === 'inside' ? 'bg-primary/20 dark:bg-primary/30' : 
+         dragPosition === 'top' ? 'border-t-2 border-primary' : 
+         dragPosition === 'bottom' ? 'border-b-2 border-primary' : '') 
+        : '';
 
     return (
-        <div ref={folderRef} data-folder-id={folder.id} className={`bg-light-card dark:bg-dark-card rounded-lg border-2 transition-colors ${isDraggingThis ? 'opacity-40' : ''} ${isDropTarget && draggingItem?.type === 'routine' ? 'border-primary bg-primary/20' : 'border-transparent'}`} onDrop={(e) => onFolderDrop(e, {type: 'folder', id: folder.id})}>
-            <div ref={folderHeaderRef} data-drag-id={folder.id} data-drag-type="folder" className={`p-3 transition-colors ${isDropTarget && draggingItem?.type === 'folder' ? 'bg-primary/10' : ''}`} onDrop={onItemDrop}>
+        <div 
+            id={folder.id}
+            draggable
+            onDragStart={(e) => handleDragStart(e, folder.id, 'folder')}
+            onDragEnd={handleDragEnd}
+            onDragOver={(e) => handleDragOver(e, folder.id, 'folder', true)}
+            onDrop={(e) => handleDrop(e, folder.id, 'folder', true)}
+            className={`bg-light-card dark:bg-dark-card rounded-lg border-2 border-transparent transition-all duration-200 mb-2 ${folderStyle}`}
+        >
+            <div className="p-3 transition-colors">
+                {/* Reordered Icons: Trash -> Edit -> Info -> Grip */}
                 <div className="flex items-center justify-end space-x-2 mb-2">
-                    <button onClick={onShowStats} className="p-2 flex items-center justify-center text-light-text-secondary dark:text-dark-text-secondary hover:text-blue-500"><InfoIcon className="h-5 w-5" /></button>
-                    <button onClick={onEditFolder} className="p-2 flex items-center justify-center text-light-text-secondary dark:text-dark-text-secondary hover:text-light-text"><PencilIcon className="h-5 w-5" /></button>
-                    <button onClick={onDeleteFolder} className="p-2 flex items-center justify-center text-light-text-secondary dark:text-dark-text-secondary hover:text-red-500"><TrashIcon className="h-5 w-5" /></button>
+                    <button onClick={(e) => onDeleteFolder(e, folder)} className="p-2 flex items-center justify-center text-light-text-secondary dark:text-dark-text-secondary hover:text-red-500"><TrashIcon className="h-5 w-5" /></button>
+                    <button onClick={(e) => onEditFolder(e, folder)} className="p-2 flex items-center justify-center text-light-text-secondary dark:text-dark-text-secondary hover:text-light-text"><PencilIcon className="h-5 w-5" /></button>
+                    <button onClick={(e) => onShowFolderStats(e, folder)} className="p-2 flex items-center justify-center text-light-text-secondary dark:text-dark-text-secondary hover:text-blue-500"><InfoIcon className="h-5 w-5" /></button>
+                    <div className="cursor-grab p-2 active:cursor-grabbing text-light-text-secondary"><GripVerticalIcon className="h-5 w-5" /></div>
                 </div>
                 <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsExpanded(!isExpanded)}>
                     <div className="flex items-center min-w-0">
-                        <div draggable={!isTouchDevice} onDragStart={(e) => onDragStart(e, {type: 'folder', id: folder.id, source: { folderId: null }})} onDragEnd={onDragEnd} onTouchStart={(e) => onTouchStart(e, {type: 'folder', id: folder.id, source: { folderId: null }}, folderHeaderRef.current!)} className="p-2 -ml-2 cursor-grab"><GripVerticalIcon className="h-5 w-5 text-light-text-secondary" /></div>
                         <FolderIcon className="h-6 w-6 text-yellow-400 mr-3 flex-shrink-0" />
                         <h3 className="font-bold text-lg truncate">{folder.name}</h3>
-                        <span className="ml-2 text-xs bg-light-bg dark:bg-dark-bg px-2 py-0.5 rounded-full text-light-text-secondary">{routines.length}</span>
+                        <span className="ml-2 text-xs bg-light-bg dark:bg-dark-bg px-2 py-0.5 rounded-full text-light-text-secondary">{routines.length + subFolders.length}</span>
                     </div>
                     <ChevronDownIcon className={`h-6 w-6 text-light-text-secondary transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                 </div>
             </div>
             {isExpanded && (
-                <div className="p-2 pt-0 space-y-2 border-t border-light-border dark:border-dark-border">
-                    {routines.map(routine => (
-                        <React.Fragment key={routine.id}>
-                            {dropIndicator?.targetId === routine.id && dropIndicator.type === 'routine' && dropIndicator.position === 'top' && <div className="h-1.5 bg-secondary rounded-full my-1"></div>}
-                            <RoutineItem routine={routine} onEdit={(e) => onEditRoutine(e, routine)} onDelete={(e) => onDeleteRoutine(e, routine)} onDuplicate={(e) => onDuplicateRoutine(e, routine.id)} onStartWorkout={(e) => onStartWorkout(e, routine.id)} onDragStart={(e) => onDragStart(e, {type: 'routine', id: routine.id, source: { folderId: folder.id }})} onDragEnd={onDragEnd} onDrop={onItemDrop} onTouchStart={onTouchStart} isDragging={draggingItem?.type === 'routine' && draggingItem.id === routine.id} isTouchDevice={isTouchDevice} dropIndicator={dropIndicator} onShowStats={(e) => onShowRoutineStats(e, routine)} />
-                            {dropIndicator?.targetId === routine.id && dropIndicator.type === 'routine' && dropIndicator.position === 'bottom' && <div className="h-1.5 bg-secondary rounded-full my-1"></div>}
-                        </React.Fragment>
+                <div className="p-2 pt-0 pl-4 space-y-2 border-t border-light-border dark:border-dark-border">
+                    {/* Render Subfolders Recursively */}
+                    {subFolders.map(subFolder => (
+                        <FolderItem 
+                            key={subFolder.id}
+                            {...props} 
+                            folder={subFolder}
+                            subFolders={foldersByParent.get(subFolder.id) || []}
+                            routines={routinesByFolder.get(subFolder.id) || []}
+                        />
                     ))}
-                    {routines.length === 0 && <div className="text-center py-4 text-sm text-light-text-secondary italic">Pasta vazia</div>}
+
+                    {/* Render Routines */}
+                    {routines.map(routine => (
+                        <RoutineItem 
+                            key={routine.id} 
+                            routine={routine} 
+                            onEdit={(e) => onEditRoutine(e, routine)} 
+                            onDelete={(e) => onDeleteRoutine(e, routine)} 
+                            onDuplicate={(e) => onDuplicateRoutine(e, routine.id)} 
+                            onStartWorkout={(e) => onStartWorkout(e, routine.id)} 
+                            onShowStats={(e) => onShowRoutineStats(e, routine)}
+                            // DnD
+                            handleDragStart={handleDragStart}
+                            handleDragEnd={handleDragEnd}
+                            handleDragOver={handleDragOver}
+                            handleDrop={handleDrop}
+                            dragOverState={dragOverState}
+                        />
+                    ))}
+                    {routines.length === 0 && subFolders.length === 0 && (
+                        <div className="text-center py-4 text-sm text-light-text-secondary italic">
+                            Pasta vazia. Arraste itens para cá.
+                        </div>
+                    )}
                 </div>
             )}
         </div>
@@ -555,30 +604,48 @@ interface RoutineItemProps {
     onDelete: (e: React.MouseEvent) => void;
     onDuplicate: (e: React.MouseEvent) => void;
     onStartWorkout: (e: React.MouseEvent) => void;
-    onDragStart: (e: React.DragEvent) => void;
-    onDragEnd: () => void;
-    onDrop: (e: React.DragEvent) => void;
-    onTouchStart: (e: React.TouchEvent, item: DraggingItem, element: HTMLElement) => void;
-    isDragging: boolean;
-    isTouchDevice: boolean;
-    dropIndicator: { targetId: string; type: string; position: 'top' | 'bottom' } | null;
     onShowStats: (e: React.MouseEvent) => void;
+    // DnD
+    handleDragStart: (e: React.DragEvent, id: string, type: DragItemType) => void;
+    handleDragEnd: (e: React.DragEvent) => void;
+    handleDragOver: (e: React.DragEvent, targetId: string, type: DragItemType, isFolder: boolean) => void;
+    handleDrop: (e: React.DragEvent, targetId: string, type: DragItemType, isFolder: boolean) => void;
+    dragOverState: DragOverState | null;
 }
 
-const RoutineItem = ({ routine, onEdit, onDelete, onDuplicate, onStartWorkout, onDragStart, onDragEnd, onDrop, onTouchStart, isDragging, isTouchDevice, dropIndicator, onShowStats }: RoutineItemProps) => {
-    const itemRef = useRef<HTMLDivElement>(null);
+const RoutineItem: React.FC<RoutineItemProps> = ({ 
+    routine, onEdit, onDelete, onDuplicate, onStartWorkout, onShowStats, 
+    handleDragStart, handleDragEnd, handleDragOver, handleDrop, dragOverState 
+}) => {
+    const isDragTarget = dragOverState?.targetId === routine.id;
+    const dragPosition = isDragTarget ? dragOverState?.position : null;
+
+    const itemStyle = isDragTarget ? 
+        (dragPosition === 'top' ? 'border-t-4 border-primary' : 
+         dragPosition === 'bottom' ? 'border-b-4 border-primary' : '') 
+        : '';
+
     return (
-        <div ref={itemRef} data-drag-id={routine.id} data-drag-type="routine" onDrop={onDrop} className={`bg-light-card dark:bg-dark-card rounded-lg shadow-sm border-l-4 p-4 transition-opacity ${isDragging ? 'opacity-40' : 'opacity-100'}`} style={{ borderLeftColor: routine.color }}>
-            {/* Action Icons Row - Moved above the name */}
+        <div 
+            id={routine.id}
+            draggable
+            onDragStart={(e) => handleDragStart(e, routine.id, 'routine')}
+            onDragEnd={handleDragEnd}
+            onDragOver={(e) => handleDragOver(e, routine.id, 'routine', false)}
+            onDrop={(e) => handleDrop(e, routine.id, 'routine', false)}
+            className={`bg-light-card dark:bg-dark-card rounded-lg shadow-sm border-l-4 p-4 transition-all duration-200 mb-2 ${itemStyle}`} 
+            style={{ borderLeftColor: routine.color }}
+        >
+            {/* Reordered Icons: Trash -> Edit -> Copy -> Info -> Grip */}
             <div className="flex justify-end items-center space-x-1 mb-2">
-                <button onClick={onShowStats} className="p-2 hover:bg-light-bg dark:hover:bg-dark-bg rounded-full text-light-text-secondary dark:text-dark-text-secondary hover:text-blue-500" aria-label={`Estatísticas de ${routine.name}`}><InfoIcon className="h-5 w-5" /></button>
-                <button onClick={onDuplicate} className="p-2 hover:bg-light-bg dark:hover:bg-dark-bg rounded-full text-light-text-secondary dark:text-dark-text-secondary hover:text-primary"><CopyIcon className="h-5 w-5" /></button>
-                <button onClick={onEdit} className="p-2 hover:bg-light-bg dark:hover:bg-dark-bg rounded-full text-light-text-secondary dark:text-dark-text-secondary hover:text-light-text"><PencilIcon className="h-5 w-5" /></button>
                 <button onClick={onDelete} className="p-2 hover:bg-light-bg dark:hover:bg-dark-bg rounded-full text-light-text-secondary dark:text-dark-text-secondary hover:text-red-500"><TrashIcon className="h-5 w-5" /></button>
+                <button onClick={onEdit} className="p-2 hover:bg-light-bg dark:hover:bg-dark-bg rounded-full text-light-text-secondary dark:text-dark-text-secondary hover:text-light-text"><PencilIcon className="h-5 w-5" /></button>
+                <button onClick={onDuplicate} className="p-2 hover:bg-light-bg dark:hover:bg-dark-bg rounded-full text-light-text-secondary dark:text-dark-text-secondary hover:text-primary"><CopyIcon className="h-5 w-5" /></button>
+                <button onClick={onShowStats} className="p-2 hover:bg-light-bg dark:hover:bg-dark-bg rounded-full text-light-text-secondary dark:text-dark-text-secondary hover:text-blue-500" aria-label={`Estatísticas de ${routine.name}`}><InfoIcon className="h-5 w-5" /></button>
+                <div className="cursor-grab p-2 active:cursor-grabbing text-light-text-secondary"><GripVerticalIcon className="h-5 w-5" /></div>
             </div>
             
             <div className="flex items-center min-w-0">
-                <div draggable={!isTouchDevice} onDragStart={onDragStart} onDragEnd={onDragEnd} onTouchStart={(e) => onTouchStart(e, {type: 'routine', id: routine.id, source: { folderId: routine.folderId }}, itemRef.current!)} className="p-2 -ml-2 cursor-grab"><GripVerticalIcon className="h-5 w-5 text-light-text-secondary" /></div>
                 <div className="min-w-0 flex-grow">
                     <h4 className="font-bold text-lg truncate leading-tight">{routine.name}</h4>
                     <p className="text-sm text-light-text-secondary truncate">{routine.plannedExercises.length} exercícios</p>
@@ -608,6 +675,11 @@ const RoutineFormModal = ({ onClose, onSave, routineToEdit, allExercises, allFol
     const [infoExercise, setInfoExercise] = useState<Exercise | null>(null);
 
     const folderOptions = [{ value: 'none', label: 'Nenhuma Pasta' }, ...allFolders.map(f => ({ value: f.id, label: f.name }))];
+
+    // Method Options
+    const setTypeOptions = Object.values(SetType).map(t => ({ value: t, label: t }));
+    const cardioOptions = Object.values(CardioMethod).map(m => ({ value: m, label: m }));
+    const flexOptions = Object.values(FlexibilityMethod).map(m => ({ value: m, label: m }));
 
     const handleSubmit = (e?: React.BaseSyntheticEvent) => {
         if (e) e.preventDefault();
@@ -643,6 +715,17 @@ const RoutineFormModal = ({ onClose, onSave, routineToEdit, allExercises, allFol
         setIsExercisePickerOpen(false);
     };
 
+    const handleDuplicatePlannedExercise = (index: number) => {
+        const exerciseToDuplicate = plannedExercises[index];
+        const newExercise = {
+            ...JSON.parse(JSON.stringify(exerciseToDuplicate)),
+            internalId: `pe-${Date.now()}-dup`
+        };
+        const newPlanned = [...plannedExercises];
+        newPlanned.splice(index + 1, 0, newExercise);
+        setPlannedExercises(newPlanned);
+    };
+
     const handleUpdatePlannedExercise = (index: number, updates: Partial<PlannedExercise>) => {
         const newPlanned = [...plannedExercises];
         newPlanned[index] = { ...newPlanned[index], ...updates };
@@ -655,6 +738,20 @@ const RoutineFormModal = ({ onClose, onSave, routineToEdit, allExercises, allFol
         newSets[setIndex] = { ...newSets[setIndex], ...updates };
         newPlanned[exIndex] = { ...newPlanned[exIndex], sets: newSets };
         setPlannedExercises(newPlanned);
+    };
+
+    const handleMoveExerciseUp = (index: number) => {
+        if (index === 0) return;
+        const newExercises = [...plannedExercises];
+        [newExercises[index - 1], newExercises[index]] = [newExercises[index], newExercises[index - 1]];
+        setPlannedExercises(newExercises);
+    };
+
+    const handleMoveExerciseDown = (index: number) => {
+        if (index === plannedExercises.length - 1) return;
+        const newExercises = [...plannedExercises];
+        [newExercises[index + 1], newExercises[index]] = [newExercises[index], newExercises[index + 1]];
+        setPlannedExercises(newExercises);
     };
 
     return (
@@ -696,12 +793,70 @@ const RoutineFormModal = ({ onClose, onSave, routineToEdit, allExercises, allFol
                             const scaleOptions = getScaleOptions(ex.perceivedExertionScale);
                             return (
                                 <div key={pe.internalId} className="bg-light-bg dark:bg-dark-bg p-4 rounded-lg space-y-4">
-                                    <div className="flex justify-between items-center">
+                                    <div className="flex flex-col gap-2">
+                                        <div className="flex items-center justify-between">
+                                            {ex.category === ExerciseCategory.RESISTED && (
+                                                <MethodPicker
+                                                    value={pe.method || SetType.NORMAL}
+                                                    onChange={(val) => handleUpdatePlannedExercise(exIndex, { method: val })}
+                                                    options={setTypeOptions}
+                                                    title="Selecionar Método"
+                                                    className={`text-sm font-bold ${
+                                                        pe.method === SetType.WARM_UP ? 'text-yellow-600 dark:text-yellow-400' :
+                                                        (pe.method && pe.method !== SetType.NORMAL) ? 'text-secondary' : 
+                                                        'text-light-text dark:text-dark-text'
+                                                    }`}
+                                                />
+                                            )}
+                                            {ex.category === ExerciseCategory.CARDIO && (
+                                                <MethodPicker
+                                                    value={pe.method || undefined}
+                                                    onChange={(val) => handleUpdatePlannedExercise(exIndex, { method: val })}
+                                                    options={cardioOptions}
+                                                    title="Selecionar Método Cardio"
+                                                    placeholder="Selecionar Método"
+                                                    className="text-sm font-bold text-light-text dark:text-dark-text"
+                                                />
+                                            )}
+                                            {ex.category === ExerciseCategory.FLEXIBILITY && (
+                                                <MethodPicker
+                                                    value={pe.method || undefined}
+                                                    onChange={(val) => handleUpdatePlannedExercise(exIndex, { method: val })}
+                                                    options={flexOptions}
+                                                    title="Selecionar Método Flexibilidade"
+                                                    placeholder="Selecionar Método"
+                                                    className="text-sm font-bold text-light-text dark:text-dark-text"
+                                                />
+                                            )}
+                                            {/* Icons Row */}
+                                            <div className="flex items-center justify-end gap-1 ml-auto">
+                                                <button type="button" onClick={() => setPlannedExercises(plannedExercises.filter((_, i) => i !== exIndex))} className="p-2 text-light-text-secondary hover:text-red-500" aria-label="Remover">
+                                                    <TrashIcon className="h-5 w-5" />
+                                                </button>
+                                                <button type="button" onClick={() => handleDuplicatePlannedExercise(exIndex)} className="p-2 text-light-text-secondary hover:text-primary" aria-label="Duplicar">
+                                                    <CopyIcon className="h-5 w-5" />
+                                                </button>
+                                                <button type="button" onClick={() => setInfoExercise(ex)} className="p-2 text-light-text-secondary hover:text-blue-500" aria-label="Informações">
+                                                    <InfoIcon className="h-5 w-5" />
+                                                </button>
+                                                <div className="flex gap-1">
+                                                    {exIndex > 0 && (
+                                                        <button type="button" onClick={() => handleMoveExerciseUp(exIndex)} className="p-2 text-light-text-secondary hover:text-primary" aria-label="Mover para cima">
+                                                            <ChevronUpIcon className="h-5 w-5" />
+                                                        </button>
+                                                    )}
+                                                    {exIndex < plannedExercises.length - 1 && (
+                                                        <button type="button" onClick={() => handleMoveExerciseDown(exIndex)} className="p-2 text-light-text-secondary hover:text-primary" aria-label="Mover para baixo">
+                                                            <ChevronDownIcon className="h-5 w-5" />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        {/* Name Row */}
                                         <div className="flex items-center gap-3">
                                             <span className="font-bold text-lg">{exIndex + 1}. {ex.name}</span>
-                                            <button type="button" onClick={() => setInfoExercise(ex)} className="p-1 text-light-text-secondary hover:text-blue-500"><InfoIcon className="h-5 w-5" /></button>
                                         </div>
-                                        <button type="button" onClick={() => setPlannedExercises(plannedExercises.filter((_, i) => i !== exIndex))} className="text-red-500"><TrashIcon className="h-5 w-5" /></button>
                                     </div>
                                     
                                     <div className="space-y-2">
@@ -781,7 +936,7 @@ const RoutineFormModal = ({ onClose, onSave, routineToEdit, allExercises, allFol
                                                 )}
 
                                                 {scaleOptions && (
-                                                    <div className="w-20 h-8 shrink-0 ml-1">
+                                                    <div className="w-14 h-8 shrink-0 ml-1">
                                                         <EffortPicker options={scaleOptions} value={set.effort} onChange={v => handleUpdateSet(exIndex, setIndex, { effort: v })} placeholder="Esf." />
                                                     </div>
                                                 )}
@@ -815,23 +970,45 @@ const RoutineFormModal = ({ onClose, onSave, routineToEdit, allExercises, allFol
 
 const FolderFormModal = ({ onClose, onSave, folderToEdit }: { onClose: () => void; onSave: (data: Partial<Folder>) => void; folderToEdit: Folder | null; }) => {
     const [name, setName] = useState(folderToEdit?.name || '');
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!name.trim()) return;
+        onSave({ name });
+    };
+
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-            <div className="bg-light-card dark:bg-dark-card rounded-lg p-6 w-full max-w-sm shadow-2xl">
-                <h3 className="text-xl font-bold mb-4">{folderToEdit ? 'Editar Pasta' : 'Nova Pasta'}</h3>
-                <div className="space-y-4">
-                    <div><label className="block text-sm font-medium mb-1">Nome da Pasta</label><input type="text" value={name} onChange={e => setName(e.target.value)} required className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2" autoFocus /></div>
-                    <div className="flex justify-end gap-3 pt-2">
-                        <button type="button" onClick={onClose} className="bg-gray-200 dark:bg-gray-700 py-2 px-4 rounded-md font-bold">Cancelar</button>
-                        <button type="button" onClick={() => { if(name.trim()) onSave({ name }); }} className="bg-primary text-white py-2 px-4 rounded-md font-bold">Salvar</button>
-                    </div>
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
+            <div className="bg-light-card dark:bg-dark-card rounded-lg p-6 w-full max-w-sm shadow-xl text-light-text dark:text-dark-text">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-xl font-bold">{folderToEdit ? 'Editar Pasta' : 'Nova Pasta'}</h3>
+                    <button onClick={onClose} className="p-1 rounded-full hover:bg-light-bg dark:hover:bg-dark-bg">
+                        <XIcon className="h-6 w-6 text-light-text-secondary dark:text-dark-text-secondary" />
+                    </button>
                 </div>
+                <form onSubmit={handleSubmit}>
+                    <div className="mb-6">
+                        <label className="block text-sm font-medium mb-1">Nome da Pasta</label>
+                        <input
+                            type="text"
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            required
+                            autoFocus
+                            className="w-full bg-light-bg dark:bg-dark-bg border border-light-border dark:border-dark-border rounded-md p-2"
+                        />
+                    </div>
+                    <div className="flex justify-end gap-3">
+                        <button type="button" onClick={onClose} className="bg-gray-200 dark:bg-gray-700 font-bold py-2 px-4 rounded-md">Cancelar</button>
+                        <button type="submit" className="bg-secondary hover:bg-pink-700 text-white font-bold py-2 px-4 rounded-md">Salvar</button>
+                    </div>
+                </form>
             </div>
         </div>
     );
 };
 
-const ExercisePickerModal = ({ onClose, onSelect, allExercises }: { onClose: () => void; onSelect: (ex: Exercise) => void; allExercises: Exercise[]; }) => {
+const ExercisePickerModal = ({ onClose, onSelect, allExercises }: { onClose: () => void; onSelect: (exercise: Exercise) => void; allExercises: Exercise[]; }) => {
     const [query, setQuery] = useState('');
     const [categoryFilter, setCategoryFilter] = useState<ExerciseCategory | null>(null);
 
@@ -861,7 +1038,7 @@ const ExercisePickerModal = ({ onClose, onSelect, allExercises }: { onClose: () 
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[60] p-4">
-            <div className="bg-light-card dark:bg-dark-card rounded-lg p-6 w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl">
+            <div className="bg-light-card dark:bg-dark-card rounded-lg p-6 w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl text-light-text dark:text-dark-text">
                 <div className="flex justify-between items-center mb-4 flex-shrink-0">
                     <h3 className="text-xl font-bold">Selecionar Exercício</h3>
                     <button onClick={onClose} className="p-1 rounded-full hover:bg-light-bg dark:hover:bg-dark-bg transition-colors">
@@ -923,7 +1100,7 @@ const ExercisePickerModal = ({ onClose, onSelect, allExercises }: { onClose: () 
                                                 )}
                                             </div>
                                             <div className="min-w-0">
-                                                <span className="font-semibold block truncate text-sm">{ex.name}</span>
+                                                <span className="font-semibold block text-sm whitespace-normal leading-tight">{ex.name}</span>
                                                 <span className="text-[10px] text-light-text-secondary truncate block">{ex.primaryMuscles.join(', ')}</span>
                                             </div>
                                         </button>

@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import ReactDOM from 'react-dom/client';
 import { View, Exercise, Routine, Folder, WorkoutSession, Theme, UserMeasurements, Evaluation, PlannedExercise, WorkoutSet, ExerciseCategory, MeasurementType } from './types';
 import { INITIAL_EXERCISES, INITIAL_ROUTINES, INITIAL_FOLDERS, DEFAULT_MUSCLE_GROUPS } from './constants';
 import RoutinesScreen from './screens/RoutinesScreen';
@@ -15,7 +16,7 @@ import MuscleGroupsScreen from './screens/MuscleGroupsScreen';
 import PhysicalEvaluationScreen from './screens/PhysicalEvaluationScreen';
 import PhysicalTestsScreen from './screens/PhysicalTestsScreen';
 import ConfirmationModal from './components/ConfirmationModal';
-import { formatDuration } from './utils';
+import { formatDuration, shareFile } from './utils';
 
 import { DumbbellIcon, RepeatIcon, CalendarIcon, BarChartIcon, SettingsIcon, PlayIcon } from './components/Icons';
 
@@ -63,12 +64,6 @@ const dbGet = async (key: string, defaultValue: any) => {
     });
 };
 
-// --- Helper for Median App Export ---
-// Converts a UTF-8 string to Base64 safely
-const utf8_to_b64 = (str: string) => {
-    return window.btoa(unescape(encodeURIComponent(str)));
-};
-
 const App: React.FC = () => {
     const [isLoaded, setIsLoaded] = useState(false);
     const [activeView, setActiveView] = useState<View>(View.ROUTINES);
@@ -96,27 +91,26 @@ const App: React.FC = () => {
     useEffect(() => {
         const init = async () => {
             const keys = [
-                { key: 'vitruvian_fit_exercises', def: INITIAL_EXERCISES, setter: setExercises },
-                { key: 'vitruvian_fit_routines', def: INITIAL_ROUTINES, setter: setRoutines },
-                { key: 'vitruvian_fit_folders', def: INITIAL_FOLDERS, setter: setFolders },
-                { key: 'vitruvian_fit_workouts', def: [], setter: setWorkouts },
-                { key: 'vitruvian_fit_muscleGroups', def: DEFAULT_MUSCLE_GROUPS, setter: setMuscleGroups },
-                { key: 'vitruvian_fit_evaluations', def: [], setter: setEvaluations },
-                { key: 'vitruvian_fit_theme', def: Theme.SYSTEM, setter: setTheme },
-                { key: 'vitruvian_fit_active_workout', def: null, setter: setActiveWorkoutSession }
+                { key: 'vitruvian_fit_exercises', def: INITIAL_EXERCISES },
+                { key: 'vitruvian_fit_routines', def: INITIAL_ROUTINES },
+                { key: 'vitruvian_fit_folders', def: INITIAL_FOLDERS },
+                { key: 'vitruvian_fit_workouts', def: [] },
+                { key: 'vitruvian_fit_muscleGroups', def: DEFAULT_MUSCLE_GROUPS },
+                { key: 'vitruvian_fit_evaluations', def: [] },
+                { key: 'vitruvian_fit_theme', def: Theme.SYSTEM },
+                { key: 'vitruvian_fit_active_workout', def: null }
             ];
 
+            const loadedData: any = {};
+
             for (const item of keys) {
-                // Try IndexedDB first
                 let data = await dbGet(item.key, undefined);
                 
-                // If not in IndexedDB, check LocalStorage for migration
                 if (data === undefined) {
                     const localData = localStorage.getItem(item.key);
                     if (localData) {
                         try {
                             data = JSON.parse(localData);
-                            // Migrate to IndexedDB for next time
                             await dbSave(item.key, data);
                             console.log(`Migrated ${item.key} to IndexedDB`);
                         } catch (e) {
@@ -126,9 +120,60 @@ const App: React.FC = () => {
                         data = item.def;
                     }
                 }
-                // Fix: Cast setter to any to bypass strict union call checking in the loop
-                (item.setter as any)(data);
+                loadedData[item.key] = data;
             }
+
+            // --- Migration: Fix typos ---
+            let muscles = loadedData['vitruvian_fit_muscleGroups'];
+            let exList = loadedData['vitruvian_fit_exercises'];
+            let migrationNeeded = false;
+
+            if (muscles && muscles.includes('Isquitibiais')) {
+                muscles = muscles.map((m: string) => m === 'Isquitibiais' ? 'Isquiotibiais' : m);
+                migrationNeeded = true;
+            }
+            
+            if (exList) {
+                // Fix muscle group typo in exercises
+                const exStr = JSON.stringify(exList);
+                if (exStr.includes('Isquitibiais')) {
+                     exList = exList.map((e: Exercise) => ({
+                        ...e,
+                        primaryMuscles: e.primaryMuscles.map(m => m === 'Isquitibiais' ? 'Isquiotibiais' : m),
+                        secondaryMuscles: e.secondaryMuscles.map(m => m === 'Isquitibiais' ? 'Isquiotibiais' : m)
+                    }));
+                    migrationNeeded = true;
+                }
+
+                // Fix 'extendido' typo in exercise names
+                const hasExtendido = exList.some((e: Exercise) => e.name.includes('extendido'));
+                if (hasExtendido) {
+                    exList = exList.map((e: Exercise) => ({
+                        ...e,
+                        name: e.name.replace('extendido', 'estendido')
+                    }));
+                    migrationNeeded = true;
+                }
+            }
+
+            if (migrationNeeded) {
+                loadedData['vitruvian_fit_muscleGroups'] = muscles;
+                loadedData['vitruvian_fit_exercises'] = exList;
+                await dbSave('vitruvian_fit_muscleGroups', muscles);
+                await dbSave('vitruvian_fit_exercises', exList);
+                console.log('Migrated data fixes (Isquiotibiais, estendido)');
+            }
+            // ---------------------------------------------------------
+
+            setExercises(loadedData['vitruvian_fit_exercises']);
+            setRoutines(loadedData['vitruvian_fit_routines']);
+            setFolders(loadedData['vitruvian_fit_folders']);
+            setWorkouts(loadedData['vitruvian_fit_workouts']);
+            setMuscleGroups(loadedData['vitruvian_fit_muscleGroups']);
+            setEvaluations(loadedData['vitruvian_fit_evaluations']);
+            setTheme(loadedData['vitruvian_fit_theme']);
+            setActiveWorkoutSession(loadedData['vitruvian_fit_active_workout']);
+
             setIsLoaded(true);
         };
         init();
@@ -246,9 +291,29 @@ const App: React.FC = () => {
     }, []);
 
     const deleteRoutine = useCallback((routineId: string) => {
+        // Find the routine before deleting it
+        const routineToDelete = routines.find(r => r.id === routineId);
+        
+        if (routineToDelete) {
+            // "Freeze" history: Update all workouts associated with this routine to include
+            // a snapshot of the routine's name and color if they don't already have one.
+            setWorkouts(prevWorkouts => prevWorkouts.map(w => {
+                if (w.routineId === routineId) {
+                    return {
+                        ...w,
+                        // Persist the current name/color in the workout record so it survives routine deletion
+                        routineSnapshot: w.routineSnapshot || {
+                            name: routineToDelete.name,
+                            color: routineToDelete.color
+                        }
+                    };
+                }
+                return w;
+            }));
+        }
+
         setRoutines(prev => prev.filter(r => r.id !== routineId));
-        setWorkouts(prev => prev.filter(w => w.routineId !== routineId));
-    }, []);
+    }, [routines]);
 
     const duplicateRoutine = useCallback((routineId: string) => {
         setRoutines(prevRoutines => {
@@ -272,6 +337,12 @@ const App: React.FC = () => {
     
     const moveRoutineToFolder = useCallback((routineId: string, folderId: string | null) => {
         setRoutines(prev => prev.map(r => r.id === routineId ? { ...r, folderId } : r));
+    }, []);
+
+    const moveFolderToFolder = useCallback((folderId: string, parentId: string | null) => {
+        // Prevent moving folder into itself or maintaining circular refs if we had robust checks
+        if (folderId === parentId) return;
+        setFolders(prev => prev.map(f => f.id === folderId ? { ...f, parentId } : f));
     }, []);
 
     const reorderRoutines = useCallback((draggedRoutineId: string, targetRoutineId: string, position: 'top' | 'bottom') => {
@@ -300,8 +371,9 @@ const App: React.FC = () => {
     }, []);
 
     const deleteFolder = useCallback((folderId: string) => {
+        // Move contents to root or parent of deleted folder? currently moving to root/null
         setRoutines(prev => prev.map(r => r.folderId === folderId ? { ...r, folderId: null } : r));
-        setFolders(prev => prev.filter(f => f.id !== folderId));
+        setFolders(prev => prev.map(f => f.parentId === folderId ? { ...f, parentId: null } : f).filter(f => f.id !== folderId));
     }, []);
 
     const reorderFolders = useCallback((draggedFolderId: string, targetFolderId: string, position: 'top' | 'bottom') => {
@@ -310,10 +382,19 @@ const App: React.FC = () => {
             const draggedIndex = foldersCopy.findIndex(f => f.id === draggedFolderId);
             let targetIndex = foldersCopy.findIndex(f => f.id === targetFolderId);
             if (draggedIndex === -1 || targetIndex === -1 || draggedIndex === targetIndex) return prevFolders;
-            const [reorderedItem] = foldersCopy.splice(draggedIndex, 1);
+            
+            const draggedFolder = { ...foldersCopy[draggedIndex] };
+            const targetFolder = foldersCopy[targetIndex];
+            
+            // If dragging between same level, update parentId to match target
+            if (draggedFolder.parentId !== targetFolder.parentId) {
+                draggedFolder.parentId = targetFolder.parentId;
+            }
+
+            foldersCopy.splice(draggedIndex, 1);
             targetIndex = foldersCopy.findIndex(f => f.id === targetFolderId);
             const insertIndex = position === 'bottom' ? targetIndex + 1 : targetIndex;
-            foldersCopy.splice(insertIndex, 0, reorderedItem);
+            foldersCopy.splice(insertIndex, 0, draggedFolder);
             return foldersCopy;
         });
     }, []);
@@ -367,6 +448,11 @@ const App: React.FC = () => {
             startTime: new Date().toISOString(),
             endTime: null,
             originalPlan: originalPlan,
+            // Include snapshot immediately to protect against future deletion
+            routineSnapshot: {
+                name: routine.name,
+                color: routine.color
+            },
             loggedExercises: originalPlan.map((plannedEx: PlannedExercise, index: number) => ({
                 ...plannedEx,
                 sets: plannedEx.sets.map((set: WorkoutSet) => ({
@@ -460,103 +546,133 @@ const App: React.FC = () => {
         setEvaluations(prev => prev.filter(e => e.date !== dateToDelete));
     }, []);
 
-    const exportData = useCallback(() => {
-        const data = { version: '1.1', app: 'Vitruvian Fit', exportedAt: new Date().toISOString(), exercises, routines, folders, workouts, muscleGroups, evaluations };
-        const jsonString = JSON.stringify(data, null, 2);
-        const fileName = `vitruvian_fit_backup_${new Date().toISOString().split('T')[0]}.json`;
-
-        // Check for Median (GoNative) app environment
-        if ((window as any).median) {
-            const base64 = utf8_to_b64(jsonString);
-            (window as any).median.share.shareFile({
-                base64: base64,
-                filename: fileName,
-                mimetype: 'application/json',
-                displayName: fileName
-            });
-            return;
+    const exportData = useCallback(async (selectedCategories: string[]) => {
+        const data: any = { version: '1.2', app: 'Vitruvian Fit', exportedAt: new Date().toISOString() };
+        
+        if (selectedCategories.includes('exercises')) {
+            data.exercises = exercises;
+            data.muscleGroups = muscleGroups; // Include dependencies
+        }
+        if (selectedCategories.includes('routines')) {
+            data.routines = routines;
+            data.folders = folders;
+        }
+        if (selectedCategories.includes('workouts')) {
+            data.workouts = workouts;
+        }
+        if (selectedCategories.includes('evaluations')) {
+            data.evaluations = evaluations;
         }
 
-        // Web Fallback
-        const blob = new Blob([jsonString], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
+        const jsonString = JSON.stringify(data, null, 2);
+        const fileName = `vitruvian_fit_backup_${new Date().toISOString().split('T')[0]}.json`;
+        
+        await shareFile(fileName, jsonString, 'application/json');
     }, [exercises, routines, folders, workouts, muscleGroups, evaluations]);
 
-    const exportExerciseList = useCallback(() => {
-        const resistedExercises = exercises.filter(ex => ex.category === ExerciseCategory.RESISTED);
-        let content = `LISTA DE EXERCÍCIOS RESISTIDOS - VITRUVIAN FIT\n`;
+    const exportExerciseList = useCallback(async () => {
+        let content = `LISTA COMPLETA DE EXERCÍCIOS - VITRUVIAN FIT\n`;
         content += `Exportado em: ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}\n`;
         content += `================================================================\n\n`;
 
-        resistedExercises.forEach((ex, index) => {
-            content += `${index + 1}. ${ex.name.toUpperCase()}\n`;
-            content += `   GRUPOS PRIMÁRIOS: ${ex.primaryMuscles.join(', ')}\n`;
-            content += `   GRUPOS SECUNDÁRIOS: ${ex.secondaryMuscles.length > 0 ? ex.secondaryMuscles.join(', ') : 'Nenhum'}\n`;
-            content += `   TIPO DE MEDIDA: ${ex.measurementType}\n`;
-            content += `   UNIDADE: ${ex.unit}\n`;
-            if (ex.notes) content += `   ANOTAÇÕES: ${ex.notes}\n`;
-            content += `----------------------------------------------------------------\n\n`;
+        const categories = [ExerciseCategory.RESISTED, ExerciseCategory.CARDIO, ExerciseCategory.FLEXIBILITY];
+
+        categories.forEach(category => {
+            const categoryExercises = exercises.filter(ex => ex.category === category);
+            // Sort alphabetically for better readability
+            categoryExercises.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+
+            if (categoryExercises.length > 0) {
+                content += `>>> CATEGORIA: ${category.toUpperCase()} <<<\n`;
+                content += `----------------------------------------------------------------\n\n`;
+                
+                categoryExercises.forEach((ex, index) => {
+                    content += `${index + 1}. ${ex.name.toUpperCase()}\n`;
+                    content += `   GRUPOS PRIMÁRIOS: ${ex.primaryMuscles.join(', ')}\n`;
+                    if (ex.secondaryMuscles.length > 0) {
+                        content += `   GRUPOS SECUNDÁRIOS: ${ex.secondaryMuscles.join(', ')}\n`;
+                    }
+                    content += `   TIPO DE MEDIDA: ${ex.measurementType}\n`;
+                    content += `   UNIDADE: ${ex.unit}\n`;
+                    if (ex.notes) content += `   ANOTAÇÕES: ${ex.notes}\n`;
+                    content += `\n`; 
+                });
+                content += `================================================================\n\n`;
+            }
         });
 
-        const fileName = `exercicios_resistidos_vitruvian_fit.txt`;
-
-        // Check for Median (GoNative) app environment
-        if ((window as any).median) {
-            const base64 = utf8_to_b64(content);
-            (window as any).median.share.shareFile({
-                base64: base64,
-                filename: fileName,
-                mimetype: 'text/plain',
-                displayName: fileName
-            });
-            return;
-        }
-
-        // Web Fallback
-        const blob = new Blob([content], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
+        const fileName = `lista_exercicios_vitruvian_fit.txt`;
+        await shareFile(fileName, content, 'text/plain');
     }, [exercises]);
 
-    const importData = useCallback((file: File) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            try {
-                const data = JSON.parse(e.target?.result as string);
-                if (data.app !== 'Vitruvian Fit') throw new Error('Arquivo inválido.');
-                if (window.confirm('Isso irá sobrescrever seus dados atuais. Continuar?')) {
-                    setExercises(data.exercises || []);
-                    setRoutines(data.routines || []);
-                    setFolders(data.folders || []);
-                    setWorkouts(data.workouts || []);
-                    setMuscleGroups(data.muscleGroups || DEFAULT_MUSCLE_GROUPS);
-                    setEvaluations(data.evaluations || []);
-                    alert('Dados importados com sucesso!');
-                    window.location.reload();
+    const processImportFile = useCallback((file: File): Promise<any> => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const json = e.target?.result as string;
+                    if (!json) throw new Error("Arquivo vazio");
+                    const data = JSON.parse(json);
+                    if (data.app !== 'Vitruvian Fit') throw new Error('Arquivo inválido: Assinatura do app não encontrada.');
+                    resolve(data);
+                } catch (err) {
+                    reject(err);
                 }
-            } catch (err) {
-                alert('Erro ao importar backup.');
+            };
+            reader.onerror = reject;
+            reader.readAsText(file);
+        });
+    }, []);
+
+    const confirmImport = useCallback(async (data: any, selectedCategories: string[]) => {
+        try {
+            const db = await getDB();
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const store = tx.objectStore(STORE_NAME);
+
+            if (selectedCategories.includes('exercises')) {
+                const newExercises = data.exercises || [];
+                const newMuscleGroups = data.muscleGroups || DEFAULT_MUSCLE_GROUPS;
+                store.put(newExercises, 'vitruvian_fit_exercises');
+                store.put(newMuscleGroups, 'vitruvian_fit_muscleGroups');
             }
-        };
-        reader.readAsText(file);
+
+            if (selectedCategories.includes('routines')) {
+                const newRoutines = data.routines || [];
+                const newFolders = (data.folders || []).map((f: any) => ({ ...f, parentId: f.parentId ?? null }));
+                store.put(newRoutines, 'vitruvian_fit_routines');
+                store.put(newFolders, 'vitruvian_fit_folders');
+            }
+
+            if (selectedCategories.includes('workouts')) {
+                const newWorkouts = data.workouts || [];
+                store.put(newWorkouts, 'vitruvian_fit_workouts');
+                // Reset active workout if we are importing new workout history to avoid conflicts
+                store.put(null, 'vitruvian_fit_active_workout');
+            }
+
+            if (selectedCategories.includes('evaluations')) {
+                const newEvaluations = data.evaluations || [];
+                store.put(newEvaluations, 'vitruvian_fit_evaluations');
+            }
+
+            await new Promise<void>((resolve, reject) => {
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+                tx.onabort = () => reject(new Error("Transação abortada"));
+            });
+            
+            alert('Dados importados com sucesso! O aplicativo será recarregado.');
+            window.location.reload(); 
+        } catch (err) {
+            console.error("Erro na importação:", err);
+            alert('Erro ao importar backup: ' + (err instanceof Error ? err.message : 'Erro desconhecido.'));
+        }
     }, []);
 
     const contextValue = useMemo(() => ({
-        exercises, setExercises, routines, setRoutines, folders, setFolders, workouts, setWorkouts, muscleGroups, setMuscleGroups, evaluations, selectedEvaluationDate, setSelectedEvaluationDate, activeWorkoutSession, setActiveWorkoutSession, isWorkoutMinimized, setIsWorkoutMinimized, editingExercise, setEditingExercise, isMeasurementsScreenOpen, setIsMeasurementsScreenOpen, isMuscleGroupsScreenOpen, setIsMuscleGroupsScreenOpen, isPhysicalEvaluationScreenOpen, setIsPhysicalEvaluationScreenOpen, isPhysicalTestsScreenOpen, setIsPhysicalTestsScreenOpen, theme, setTheme, setInfoModalContent, addExercise, updateExercise, deleteExercise, duplicateExercise, addMuscleGroup, editMuscleGroup, deleteMuscleGroup, addRoutine, updateRoutine, deleteRoutine, duplicateRoutine, moveRoutineToFolder, reorderRoutines, addFolder, updateFolder, deleteFolder, reorderFolders, logWorkout, updateWorkout, deleteWorkout, saveEvaluation, deleteEvaluation, startWorkoutFromRoutine, startFiveMinTest, startIncrementalTest, startOneRMTest, exportData, importData, exportExerciseList
-    }), [exercises, routines, folders, workouts, muscleGroups, evaluations, activeWorkoutSession, isWorkoutMinimized, editingExercise, theme, isMeasurementsScreenOpen, isMuscleGroupsScreenOpen, isPhysicalEvaluationScreenOpen, isPhysicalTestsScreenOpen, selectedEvaluationDate, addExercise, updateExercise, deleteExercise, duplicateExercise, addMuscleGroup, editMuscleGroup, deleteMuscleGroup, addRoutine, updateRoutine, deleteRoutine, duplicateRoutine, moveRoutineToFolder, reorderRoutines, addFolder, updateFolder, deleteFolder, reorderFolders, logWorkout, updateWorkout, deleteWorkout, saveEvaluation, deleteEvaluation, startWorkoutFromRoutine, startFiveMinTest, startIncrementalTest, startOneRMTest, exportData, importData, exportExerciseList]);
+        exercises, setExercises, routines, setRoutines, folders, setFolders, workouts, setWorkouts, muscleGroups, setMuscleGroups, evaluations, selectedEvaluationDate, setSelectedEvaluationDate, activeWorkoutSession, setActiveWorkoutSession, isWorkoutMinimized, setIsWorkoutMinimized, editingExercise, setEditingExercise, isMeasurementsScreenOpen, setIsMeasurementsScreenOpen, isMuscleGroupsScreenOpen, setIsMuscleGroupsScreenOpen, isPhysicalEvaluationScreenOpen, setIsPhysicalEvaluationScreenOpen, isPhysicalTestsScreenOpen, setIsPhysicalTestsScreenOpen, theme, setTheme, setInfoModalContent, addExercise, updateExercise, deleteExercise, duplicateExercise, addMuscleGroup, editMuscleGroup, deleteMuscleGroup, addRoutine, updateRoutine, deleteRoutine, duplicateRoutine, moveRoutineToFolder, moveFolderToFolder, reorderRoutines, addFolder, updateFolder, deleteFolder, reorderFolders, logWorkout, updateWorkout, deleteWorkout, saveEvaluation, deleteEvaluation, startWorkoutFromRoutine, startFiveMinTest, startIncrementalTest, startOneRMTest, exportData, processImportFile, confirmImport, exportExerciseList
+    }), [exercises, routines, folders, workouts, muscleGroups, evaluations, activeWorkoutSession, isWorkoutMinimized, editingExercise, theme, isMeasurementsScreenOpen, isMuscleGroupsScreenOpen, isPhysicalEvaluationScreenOpen, isPhysicalTestsScreenOpen, selectedEvaluationDate, addExercise, updateExercise, deleteExercise, duplicateExercise, addMuscleGroup, editMuscleGroup, deleteMuscleGroup, addRoutine, updateRoutine, deleteRoutine, duplicateRoutine, moveRoutineToFolder, moveFolderToFolder, reorderRoutines, addFolder, updateFolder, deleteFolder, reorderFolders, logWorkout, updateWorkout, deleteWorkout, saveEvaluation, deleteEvaluation, startWorkoutFromRoutine, startFiveMinTest, startIncrementalTest, startOneRMTest, exportData, processImportFile, confirmImport, exportExerciseList]);
 
     if (!isLoaded) {
         return (
@@ -586,17 +702,18 @@ const App: React.FC = () => {
         }
     };
 
-    const isFullScreenView = (activeWorkoutSession && !isWorkoutMinimized) || editingExercise || isMeasurementsScreenOpen || isMuscleGroupsScreenOpen || isPhysicalEvaluationScreenOpen || isPhysicalTestsScreenOpen;
+    const isFullScreenView = (activeWorkoutSession && !isWorkoutMinimized) || editingExercise !== null || isMeasurementsScreenOpen || isMuscleGroupsScreenOpen || isPhysicalEvaluationScreenOpen || isPhysicalTestsScreenOpen;
 
     return (
         <AppContext.Provider value={contextValue}>
-            <div className="h-full w-full bg-light-bg dark:bg-dark-bg text-light-text dark:text-dark-text flex font-sans safe-left-padding safe-right-padding">
+            <div className={`flex h-screen w-full bg-light-bg dark:bg-dark-bg transition-colors duration-200 ${theme === Theme.DARK ? 'dark' : ''} safe-left-padding safe-right-padding`}>
                 {!isFullScreenView && <Sidebar activeView={activeView} setActiveView={setActiveView} />}
-                <div className="flex-1 flex flex-col h-full w-full max-w-full md:max-w-5xl mx-auto xl:max-w-none xl:mx-0 shadow-2xl xl:shadow-none relative">
+                
+                <div className="flex-1 flex flex-col h-full w-full max-w-full lg:max-w-5xl mx-auto lg:max-w-none lg:mx-0 shadow-2xl lg:shadow-none relative">
                     {!isFullScreenView && (
-                        <header className="flex-shrink-0 bg-light-card dark:bg-dark-card h-16 flex items-center justify-between px-4 xl:px-6 border-b border-light-border dark:border-dark-border safe-top-padding">
+                        <header className="flex-shrink-0 bg-light-card dark:bg-dark-card h-16 flex items-center justify-between px-4 lg:px-6 border-b border-light-border dark:border-dark-border safe-top-padding">
                             <h1 className="text-xl font-bold">{activeView}</h1>
-                            <button onClick={() => setActiveView(View.SETTINGS)} className="p-2 flex items-center justify-center xl:hidden">
+                            <button onClick={() => setActiveView(View.SETTINGS)} className="p-2 flex items-center justify-center lg:hidden">
                                 <SettingsIcon className={`h-6 w-6 ${activeView === View.SETTINGS ? 'text-secondary' : 'text-light-text-secondary dark:text-dark-text-secondary'}`} />
                             </button>
                         </header>
@@ -606,7 +723,7 @@ const App: React.FC = () => {
                         <MinimizedWorkoutBar session={activeWorkoutSession} routine={routines.find((r: Routine) => r.id === activeWorkoutSession.routineId)} onClick={() => setIsWorkoutMinimized(false)} />
                     )}
                     {!isFullScreenView && (
-                        <nav className="flex-shrink-0 bg-light-card dark:bg-dark-card h-20 flex justify-around items-center border-t border-light-border dark:border-dark-border xl:hidden safe-bottom-padding">
+                        <nav className="flex-shrink-0 bg-light-card dark:bg-dark-card h-16 flex justify-around items-center border-t border-light-border dark:border-dark-border lg:hidden [@media(orientation:landscape)_and_(max-height:600px)]:hidden safe-bottom-padding">
                             <NavItem icon={<RepeatIcon className="h-6 w-6" />} label={View.ROUTINES} activeView={activeView} onClick={setActiveView} />
                             <NavItem icon={<DumbbellIcon className="h-6 w-6" />} label={View.EXERCISES} activeView={activeView} onClick={setActiveView} />
                             <NavItem icon={<CalendarIcon className="h-6 w-6" />} label={View.CALENDAR} activeView={activeView} onClick={setActiveView} />
@@ -614,8 +731,22 @@ const App: React.FC = () => {
                         </nav>
                     )}
                 </div>
+
                 {infoModalContent && (
-                    <ConfirmationModal isOpen={true} onClose={() => setInfoModalContent(null)} onConfirm={() => { infoModalContent.onConfirm?.(); setInfoModalContent(null) }} title={infoModalContent.title} message={infoModalContent.message} confirmText={infoModalContent.confirmText || "OK"} cancelText={infoModalContent.cancelText || "Cancelar"} showCancelButton={infoModalContent.showCancelButton ?? false} variant="info" />
+                    <ConfirmationModal
+                        isOpen={!!infoModalContent}
+                        onClose={() => setInfoModalContent(null)}
+                        onConfirm={() => {
+                            if (infoModalContent.onConfirm) infoModalContent.onConfirm();
+                            setInfoModalContent(null);
+                        }}
+                        title={infoModalContent.title}
+                        message={infoModalContent.message}
+                        confirmText={infoModalContent.confirmText || 'OK'}
+                        cancelText={infoModalContent.cancelText}
+                        showCancelButton={infoModalContent.showCancelButton ?? false}
+                        variant="info"
+                    />
                 )}
             </div>
         </AppContext.Provider>
@@ -639,7 +770,7 @@ const MinimizedWorkoutBar: React.FC<{ session: WorkoutSession; routine: Routine 
                 <PlayIcon className="h-5 w-5 mr-3 fill-current" />
                 <div className="min-w-0">
                     <p className="text-xs font-bold uppercase tracking-wider opacity-80">Treino em andamento</p>
-                    <p className="font-bold truncate">{routine?.name || 'Sessão de Treino'}</p>
+                    <p className="font-bold truncate">{session.routineSnapshot?.name || routine?.name || 'Sessão de Treino'}</p>
                 </div>
             </div>
             <div className="text-xl font-black tabular-nums">{formatDuration(elapsed)}</div>

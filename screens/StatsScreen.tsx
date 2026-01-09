@@ -1,9 +1,10 @@
+
 import React, { useMemo, useState, useEffect } from 'react';
 import { useApp } from '../App';
 import { WorkoutSession, Routine, ExerciseCategory, Unit, MeasurementType, Evaluation, Exercise } from '../types';
 import { ChevronRightIcon, FileTextIcon, BarChartIcon, SettingsIcon, CalendarIcon } from '../components/Icons';
 import { BarChart, HorizontalBarChart, ChartData } from '../components/Charts';
-import { parseEffortToNumber, formatSecondsToMMSS } from '../utils';
+import { parseEffortToNumber, formatSecondsToMMSS, shareFile } from '../utils';
 import CustomSelect from '../components/CustomSelect';
 
 
@@ -11,6 +12,21 @@ import CustomSelect from '../components/CustomSelect';
 const formatDateForInput = (date: Date): string => {
     return date.toISOString().split('T')[0];
 };
+
+const resistedLegend = [
+    { label: 'Alta (≥ 85% 1RM)', color: '#DB2777' },
+    { label: 'Moderada (60-84% 1RM)', color: '#F59E0B' },
+    { label: 'Leve (30-59% 1RM)', color: '#10B981' },
+    { label: 'Muito Leve (< 30% 1RM)', color: '#3B82F6' },
+    { label: 'Indefinido', color: '#6B7280' },
+];
+
+const flexibilityLegend = [
+    { label: 'Alta', color: '#DB2777' },
+    { label: 'Moderada', color: '#F59E0B' },
+    { label: 'Leve', color: '#10B981' },
+    { label: 'Muito Leve', color: '#3B82F6' },
+];
 
 // Main StatsScreen Component
 const StatsScreen: React.FC = () => {
@@ -91,7 +107,10 @@ const StatsScreen: React.FC = () => {
             
             const startDateFormatted = new Date(`${startDate}T00:00:00`).toLocaleDateString('pt-BR');
             const endDateFormatted = new Date(`${endDate}T00:00:00`).toLocaleDateString('pt-BR');
-            pdf.save(`Relatorio_Vitruvian_Fit_${startDateFormatted}_a_${endDateFormatted}.pdf`);
+            
+            const pdfBlob = pdf.output('blob');
+            const fileName = `Relatorio_Vitruvian_Fit_${startDateFormatted.replace(/\//g, '-')}_a_${endDateFormatted.replace(/\//g, '-')}.pdf`;
+            await shareFile(fileName, pdfBlob, 'application/pdf');
 
         } catch (error) {
             console.error('Error generating PDF:', error);
@@ -283,6 +302,10 @@ const StatsScreen: React.FC = () => {
                     if (routine) {
                         name = routine.name;
                         color = routine.color;
+                    } else if (w.routineSnapshot) {
+                        // Use snapshot if routine is deleted
+                        name = w.routineSnapshot.name;
+                        color = w.routineSnapshot.color;
                     }
                 }
                 
@@ -337,6 +360,10 @@ const StatsScreen: React.FC = () => {
                 if (routine) {
                     name = routine.name;
                     color = routine.color;
+                } else if (w.routineSnapshot) {
+                    // Use snapshot if routine is deleted
+                    name = w.routineSnapshot.name;
+                    color = w.routineSnapshot.color;
                 }
             }
             
@@ -414,6 +441,10 @@ const StatsScreen: React.FC = () => {
                 if (routine) {
                     name = routine.name;
                     color = routine.color;
+                } else if (w.routineSnapshot) {
+                    // Use snapshot if routine is deleted
+                    name = w.routineSnapshot.name;
+                    color = w.routineSnapshot.color;
                 }
             }
             
@@ -462,8 +493,8 @@ const StatsScreen: React.FC = () => {
 
                 loggedEx.sets.forEach(set => {
                     const effortValue = parseEffortToNumber(set.effort);
-                    // Base para recordes: PSE/RIR >= 9
-                    if (effortValue < 9) return;
+                    // Base para recordes: PSE/RIR >= 9.5
+                    if (effortValue < 9.5) return;
 
                     const reps = set.reps ?? 0;
                     const barbellWeight = loggedEx.barbellWeight ?? 0;
@@ -487,7 +518,7 @@ const StatsScreen: React.FC = () => {
         // 2. Processar os treinos do PERÍODO FILTRADO
         const intensityMap = new Map<string, Record<string, number>>();
         muscleGroups.forEach(muscle => {
-            intensityMap.set(muscle, { 'Alta': 0, 'Moderada': 0, 'Leve': 0, 'Muito Leve': 0 });
+            intensityMap.set(muscle, { 'Alta (≥ 85% 1RM)': 0, 'Moderada (60-84% 1RM)': 0, 'Leve (30-59% 1RM)': 0, 'Muito Leve (< 30% 1RM)': 0, 'Indefinido': 0 });
         });
 
         filteredWorkouts.forEach((session: WorkoutSession) => {
@@ -510,7 +541,7 @@ const StatsScreen: React.FC = () => {
                     // Apenas séries efetivas (>= 7) ou testes de força
                     if (effortValue < 7 && session.routineId !== 'internal_test') return;
 
-                    let intensityCategory = 'Moderada'; // Fallback
+                    let intensityCategory = 'Indefinido'; 
 
                     if (max1RMAtThisPoint > 0) {
                         const barbellWeight = loggedEx.barbellWeight ?? 0;
@@ -519,10 +550,10 @@ const StatsScreen: React.FC = () => {
                         else if (exercise.isCounterweight && latestBodyMass && currentLoad > 0) currentLoad = Math.max(0, latestBodyMass - currentLoad);
 
                         const percentage = (currentLoad / max1RMAtThisPoint) * 100;
-                        if (percentage >= 85) intensityCategory = 'Alta';
-                        else if (percentage >= 60) intensityCategory = 'Moderada';
-                        else if (percentage >= 30) intensityCategory = 'Leve';
-                        else intensityCategory = 'Muito Leve';
+                        if (percentage >= 85) intensityCategory = 'Alta (≥ 85% 1RM)';
+                        else if (percentage >= 60) intensityCategory = 'Moderada (60-84% 1RM)';
+                        else if (percentage >= 30) intensityCategory = 'Leve (30-59% 1RM)';
+                        else intensityCategory = 'Muito Leve (< 30% 1RM)';
                     }
 
                     uniqueMuscles.forEach(muscle => {
@@ -537,10 +568,11 @@ const StatsScreen: React.FC = () => {
 
         // 3. Converter para o formato ChartData[]
         const intensityColors: Record<string, string> = {
-            'Alta': '#EF4444',
-            'Moderada': '#DB2777',
-            'Leve': '#F59E0B',
-            'Muito Leve': '#3B82F6'
+            'Alta (≥ 85% 1RM)': '#DB2777',
+            'Moderada (60-84% 1RM)': '#F59E0B',
+            'Leve (30-59% 1RM)': '#10B981',
+            'Muito Leve (< 30% 1RM)': '#3B82F6',
+            'Indefinido': '#6B7280'
         };
 
         return Array.from(intensityMap.entries())
@@ -595,6 +627,10 @@ const StatsScreen: React.FC = () => {
                 if (routine) {
                     name = routine.name;
                     color = routine.color;
+                } else if (w.routineSnapshot) {
+                    // Use snapshot if routine is deleted
+                    name = w.routineSnapshot.name;
+                    color = w.routineSnapshot.color;
                 }
             }
             
@@ -662,6 +698,10 @@ const StatsScreen: React.FC = () => {
                 if (routine) {
                     name = routine.name;
                     color = routine.color;
+                } else if (w.routineSnapshot) {
+                    // Use snapshot if routine is deleted
+                    name = w.routineSnapshot.name;
+                    color = w.routineSnapshot.color;
                 }
             }
             
@@ -727,6 +767,10 @@ const StatsScreen: React.FC = () => {
                 if (routine) {
                     name = routine.name;
                     color = routine.color;
+                } else if (w.routineSnapshot) {
+                    // Use snapshot if routine is deleted
+                    name = w.routineSnapshot.name;
+                    color = w.routineSnapshot.color;
                 }
             }
             
@@ -794,9 +838,9 @@ const StatsScreen: React.FC = () => {
         });
 
         const intensityColors: Record<string, string> = {
-            'Alta': '#EF4444',
-            'Moderada': '#DB2777',
-            'Leve': '#F59E0B',
+            'Alta': '#DB2777',
+            'Moderada': '#F59E0B',
+            'Leve': '#10B981',
             'Muito Leve': '#3B82F6'
         };
 
@@ -910,7 +954,7 @@ const StatsScreen: React.FC = () => {
                                 <div>
                                     <h3 className="text-lg font-semibold text-light-text dark:text-dark-text mb-1">Séries por Grupo Muscular (Intensidade por 1RM Histórico)</h3>
                                     <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Soma das séries efetivas classificadas pela carga em relação ao seu 1RM recorde na data de cada treino.</p>
-                                    <HorizontalBarChart data={seriesByMuscleGroupData} unit="séries" />
+                                    <HorizontalBarChart data={seriesByMuscleGroupData} unit="séries" legend={resistedLegend} verticalLegend={true} />
                                 </div>
                                 <div className="pl-8">
                                     <h3 className="text-lg font-semibold text-light-text dark:text-dark-text mb-1">Carga Externa (Kg)</h3>
@@ -1028,7 +1072,7 @@ const StatsScreen: React.FC = () => {
                                 <div>
                                     <h3 className="text-lg font-semibold text-light-text dark:text-dark-text mb-1">Séries por Grupo Muscular (Intensidade por PERFLEX)</h3>
                                     <p className="text-sm text-light-text-secondary dark:text-dark-text-secondary mb-2">Soma do número de séries classificadas pela intensidade do esforço (Escala PERFLEX).</p>
-                                    <HorizontalBarChart data={seriesByMuscleGroupFlexibilityData} unit="séries" />
+                                    <HorizontalBarChart data={seriesByMuscleGroupFlexibilityData} unit="séries" legend={flexibilityLegend} />
                                 </div>
                                 <div className="pl-8">
                                     <h3 className="text-lg font-semibold text-light-text dark:text-dark-text mb-1">Carga Interna</h3>

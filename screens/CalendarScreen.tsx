@@ -148,6 +148,11 @@ const CalendarScreen: React.FC = () => {
             startTime: workoutStartTime,
             endTime: null,
             originalPlan: originalPlan,
+            // Save snapshot of routine details
+            routineSnapshot: {
+                name: routine.name,
+                color: routine.color
+            },
             loggedExercises: originalPlan.map((plannedEx: PlannedExercise, index: number) => ({
                 ...plannedEx,
                 sets: plannedEx.sets.map((set: WorkoutSet) => ({
@@ -345,18 +350,29 @@ const CalendarScreen: React.FC = () => {
                                             </span>
                                             <div className="mt-1 space-y-1">
                                                 {workoutsByDate.get(dayString)?.map(workout => {
-                                                    let routine: Routine | { name: string, color: string } | undefined = routines.find((r: Routine) => r.id === workout.routineId);
+                                                    // 1. Try to get the live routine
+                                                    let routineDisplay: { name: string, color: string } | undefined = routines.find((r: Routine) => r.id === workout.routineId);
                                                     
-                                                    // Handle internal performance tests
-                                                    if (!routine && workout.routineId === 'internal_test') {
-                                                        routine = { name: 'Teste Físico', color: '#6B7280' };
+                                                    // 2. If not found, check for a snapshot saved in the workout itself (for deleted routines)
+                                                    if (!routineDisplay && workout.routineSnapshot) {
+                                                        routineDisplay = workout.routineSnapshot;
                                                     }
 
-                                                    const textColorClass = getContrastYIQ(routine?.color);
+                                                    // 3. Fallbacks
+                                                    if (!routineDisplay) {
+                                                        if (workout.routineId === 'internal_test') {
+                                                            routineDisplay = { name: 'Teste Físico', color: '#6B7280' };
+                                                        } else {
+                                                            // Only shows 'Rotina Arquivada' if absolutely no data exists
+                                                            routineDisplay = { name: 'Rotina Arquivada', color: '#9CA3AF' };
+                                                        }
+                                                    }
+
+                                                    const textColorClass = getContrastYIQ(routineDisplay?.color);
                                                     return (
                                                         <div key={workout.id} 
                                                              onClick={(e) => { e.stopPropagation(); handleWorkoutClick(workout)}}
-                                                             onTouchStart={(e) => handleTouchStart(e, workout, routine)}
+                                                             onTouchStart={(e) => handleTouchStart(e, workout, routineDisplay)}
                                                              draggable="true"
                                                              onDragStart={(e) => {
                                                                  e.stopPropagation();
@@ -369,8 +385,8 @@ const CalendarScreen: React.FC = () => {
                                                                  setDropTargetDate(null);
                                                              }}
                                                              className={`text-sm p-1 rounded flex items-start cursor-grab transition-opacity ${textColorClass} ${draggingWorkoutId === workout.id ? 'opacity-50' : workout.completed ? 'opacity-60' : ''}`}
-                                                             style={{ backgroundColor: routine?.color, touchAction: 'none' }}>
-                                                             <span className="font-bold w-full break-words leading-tight">{routine?.name}</span>
+                                                             style={{ backgroundColor: routineDisplay?.color, touchAction: 'none' }}>
+                                                             <span className="font-bold w-full break-words leading-tight">{routineDisplay?.name}</span>
                                                         </div>
                                                     );
                                                 })}
@@ -396,13 +412,19 @@ const CalendarScreen: React.FC = () => {
             {selectedWorkout && (
                 <WorkoutDetailModal
                     workout={selectedWorkout}
-                    routine={routines.find((r:Routine) => r.id === selectedWorkout.routineId) || (selectedWorkout.routineId === 'internal_test' ? { id: 'internal_test', name: 'Teste Físico', color: '#6B7280', plannedExercises: [], folderId: null } : undefined)}
+                    routine={
+                        routines.find((r:Routine) => r.id === selectedWorkout.routineId) || 
+                        (selectedWorkout.routineSnapshot 
+                            ? { id: selectedWorkout.routineId, ...selectedWorkout.routineSnapshot, plannedExercises: [], folderId: null } 
+                            : (selectedWorkout.routineId === 'internal_test' 
+                                ? { id: 'internal_test', name: 'Teste Físico', color: '#6B7280', plannedExercises: [], folderId: null } 
+                                : { id: 'deleted', name: 'Rotina Arquivada', color: '#9CA3AF', plannedExercises: [], folderId: null }))
+                    }
                     exercises={exercises}
                     onClose={() => setSelectedWorkout(null)}
                     onDelete={() => setConfirmDeleteWorkoutId(selectedWorkout.id)}
                     onStart={() => {
                         if (selectedWorkout) {
-                            // Ensure every logged exercise has a tempId for identification in the session screen
                             const workoutWithIds = {
                                 ...selectedWorkout,
                                 loggedExercises: selectedWorkout.loggedExercises.map((le, idx) => ({
@@ -412,13 +434,11 @@ const CalendarScreen: React.FC = () => {
                             };
 
                             if (!selectedWorkout.completed) {
-                                // For un-completed workouts, reset the start time to now.
                                 setActiveWorkoutSession({
                                     ...workoutWithIds,
                                     startTime: new Date().toISOString(),
                                 });
                             } else {
-                                // For completed ones, just open for editing.
                                 setActiveWorkoutSession(workoutWithIds);
                             }
                         }
